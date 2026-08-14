@@ -198,6 +198,7 @@ namespace DeepSeekHarnessManager.Tests
         {
             PluginCatalog catalog = PluginCatalog.Load();
             PluginDefinition plugin = catalog.Get("deepseek-harness-web");
+            UseTestPnpm(plugin);
             InstanceConfig instance = CreateInstance(plugin, 3080);
             instance.Runtime = "global";
             RuntimeResolution global = RuntimeResolver.Resolve(instance, plugin, 3080, String.Empty);
@@ -326,6 +327,7 @@ namespace DeepSeekHarnessManager.Tests
         {
             PluginCatalog catalog = PluginCatalog.Load();
             PluginDefinition plugin = catalog.Get("deepseek-harness-web");
+            UseTestPnpm(plugin);
             ConfigurationStore store = new ConfigurationStore(catalog);
             InstanceConfig globalInstance = CreateInstance(plugin, 3080);
             globalInstance.Id = "rollback-global";
@@ -520,6 +522,20 @@ namespace DeepSeekHarnessManager.Tests
             instance.PreferredPort = port;
             instance.PinnedVersion = plugin.Update.BundledVersion;
             return instance;
+        }
+
+        private static void UseTestPnpm(PluginDefinition plugin)
+        {
+            string command = Path.Combine(AppPaths.DataDirectory, "fake-tools", "pnpm.cmd");
+            Directory.CreateDirectory(Path.GetDirectoryName(command));
+            File.WriteAllText(command, "@exit /b 0\r\n", Encoding.ASCII);
+            foreach (RuntimeDefinition runtime in plugin.Runtimes)
+            {
+                if (!String.Equals(runtime.Kind, "source", StringComparison.OrdinalIgnoreCase)) continue;
+                runtime.CommandCandidates = new List<string> { command };
+                return;
+            }
+            throw new InvalidOperationException("The source runtime definition was not found.");
         }
 
         private static int ReserveFreePort()

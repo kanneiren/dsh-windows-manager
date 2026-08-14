@@ -119,7 +119,15 @@ npx --yes dsh-windows-manager install
 
 这里建议使用用户级 npm 配置，而不是只给单次 `npx` 命令增加 `--registry`：管理器在没有全局 DSH 时还会通过 npx 下载 `@deepseek-ai/dsh`，后续用户确认的 npm 更新也需要可用的 registry。镜像同步新版本可能有短暂延迟；找不到刚发布的版本时，应稍后重试或临时切回官方源。
 
-## 运行方式
+## 打开方式
+
+- 双击桌面快捷方式 `DeepSeek Harness`：DSH 已运行时直接打开 Web UI；未运行时先启动，等待就绪后再打开。
+- 双击托盘图标：打开默认实例的 Web UI。
+- 命令行运行 `npx --yes dsh-windows-manager open`：执行与桌面快捷方式相同的操作。
+
+关闭浏览器不会结束 DSH。只需启动服务而不打开浏览器时，运行 `npx --yes dsh-windows-manager start`。
+
+## DSH 运行时选择
 
 ### 自动选择
 
