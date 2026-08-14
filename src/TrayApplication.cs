@@ -106,6 +106,14 @@ namespace DeepSeekHarnessManager
                 }
             }
             menu.Items.Add(new ToolStripSeparator());
+            string marketplaceUrl = controllers.Select(delegate(InstanceController item) { return item.Plugin.MarketplaceUrl; })
+                .FirstOrDefault(delegate(string value) { return !String.IsNullOrWhiteSpace(value); });
+            if (!String.IsNullOrWhiteSpace(marketplaceUrl))
+            {
+                ToolStripMenuItem marketplace = new ToolStripMenuItem(Localization.Text("Menu.PluginMarketplace"));
+                marketplace.Click += delegate { OpenUrl(marketplaceUrl); };
+                menu.Items.Add(marketplace);
+            }
             ToolStripMenuItem openConfig = new ToolStripMenuItem(Localization.Text("Menu.OpenConfig"));
             openConfig.Click += delegate { OpenFile(AppPaths.ConfigFile); };
             menu.Items.Add(openConfig);
@@ -386,6 +394,19 @@ namespace DeepSeekHarnessManager
         {
             if (!Directory.Exists(path)) Directory.CreateDirectory(path);
             Process.Start(new ProcessStartInfo("explorer.exe", CommandRunner.QuoteArgument(path)) { UseShellExecute = true });
+        }
+
+        private static void OpenUrl(string url)
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+            }
+            catch (Exception exception)
+            {
+                FileLog.Error("Could not open URL " + url + ": " + exception.Message);
+                MessageBox.Show(Localization.Format("Dialog.OpenUrlFailed", url, exception.Message), Localization.Text("App.Title"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
         }
 
         private static void OpenFile(string path)

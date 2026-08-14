@@ -173,6 +173,7 @@ powershell.exe -ExecutionPolicy Bypass -File .\scripts\Install.ps1 `
 - `Install available update`：仅发现新版时出现，必须再次确认。
 - `Status details`：显示端口、PID、路径、指纹、工作区和日志。
 - `Open workspace`：打开实例工作目录。
+- `DSH plugin marketplace`：打开 GitHub 插件发现页。
 - `Open configuration file`：打开 JSON 配置。
 - `Open logs`：打开日志目录。
 - `Exit manager (leave DSH running)`：只退出托盘，保持 DSH 服务运行。

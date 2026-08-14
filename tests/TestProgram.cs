@@ -60,6 +60,7 @@ namespace DeepSeekHarnessManager.Tests
             PluginDefinition plugin = catalog.Get("deepseek-harness-web");
             Assert(plugin.Runtimes.Count == 3, "expected global/source/npx runtimes");
             Assert(plugin.Companion != null && plugin.Companion.Enabled, "companion must be enabled");
+            Assert(plugin.MarketplaceUrl == "https://github.com/topics/dsh-plugin", "plugin marketplace URL is missing");
         }
 
         private static void TestConfiguration()
@@ -529,6 +530,10 @@ namespace DeepSeekHarnessManager.Tests
             string command = Path.Combine(AppPaths.DataDirectory, "fake-tools", "pnpm.cmd");
             Directory.CreateDirectory(Path.GetDirectoryName(command));
             File.WriteAllText(command, "@exit /b 0\r\n", Encoding.ASCII);
+            string path = Environment.GetEnvironmentVariable("PATH") ?? String.Empty;
+            string commandDirectory = Path.GetDirectoryName(command);
+            if (path.IndexOf(commandDirectory, StringComparison.OrdinalIgnoreCase) < 0)
+                Environment.SetEnvironmentVariable("PATH", commandDirectory + ";" + path);
             foreach (RuntimeDefinition runtime in plugin.Runtimes)
             {
                 if (!String.Equals(runtime.Kind, "source", StringComparison.OrdinalIgnoreCase)) continue;

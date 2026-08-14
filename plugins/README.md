@@ -4,7 +4,7 @@ The host discovers `plugins/*/plugin.json`. Each manifest declares all product-s
 
 Schema version 1 fields:
 
-- `Id`, `DisplayName`, `DefaultPort`, `FallbackPortCount`.
+- `Id`, `DisplayName`, optional `MarketplaceUrl`, `DefaultPort`, `FallbackPortCount`.
 - `Probe.UrlTemplate` and required response `Markers`.
 - `ProcessPatterns` used only for identification and safe-stop eligibility.
 - `Runtimes` containing command candidates, requirements, arguments, working directory and version file.

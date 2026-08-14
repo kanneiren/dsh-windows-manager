@@ -41,6 +41,7 @@ namespace DeepSeekHarnessManager
         public int SchemaVersion { get; set; }
         public string Id { get; set; }
         public string DisplayName { get; set; }
+        public string MarketplaceUrl { get; set; }
         public int DefaultPort { get; set; }
         public int FallbackPortCount { get; set; }
         public ProbeDefinition Probe { get; set; }

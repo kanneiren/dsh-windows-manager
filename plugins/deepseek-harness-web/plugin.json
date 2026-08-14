@@ -2,6 +2,7 @@
   "SchemaVersion": 1,
   "Id": "deepseek-harness-web",
   "DisplayName": "DeepSeek Harness",
+  "MarketplaceUrl": "https://github.com/topics/dsh-plugin",
   "DefaultPort": 3080,
   "FallbackPortCount": 20,
   "Probe": {

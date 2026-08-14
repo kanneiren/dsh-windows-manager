@@ -19,6 +19,7 @@
 | Performance | One-second command response with five-second stable health probes and cached immutable process fingerprints |
 | Languages | English, Simplified Chinese, and startup-time Windows language selection |
 | Status | Tray state, details dialog, logs, and npm CLI JSON or text output |
+| Plugin discovery | Opens the GitHub `dsh-plugin` topic |
 | Troubleshooting | URL, dual fingerprints, process identity, output/error logs, and a documented decision tree |
 | Upgrade | Replaces runtime files while preserving configuration and mutable data |
 | Uninstall | Removes application and shortcut; data purge is explicit |
