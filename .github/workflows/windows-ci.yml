@@ -1,0 +1,60 @@
+name: Windows CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Build, test, and package
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install npm package metadata
+        run: npm ci --ignore-scripts
+
+      - name: Install the test DSH runtime
+        shell: pwsh
+        run: |
+          $plugin = Get-Content -LiteralPath '.\plugins\deepseek-harness-web\plugin.json' -Raw | ConvertFrom-Json
+          npm install --global "$($plugin.Update.PackageName)@$($plugin.Update.BundledVersion)"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run complete test suite
+        shell: pwsh
+        run: .\scripts\Test.ps1
+
+      - name: Build and test the npm tarball
+        shell: pwsh
+        run: |
+          $metadata = Get-Content -LiteralPath '.\package.json' -Raw | ConvertFrom-Json
+          npm pack --silent
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $package = "$($metadata.name)-$($metadata.version).tgz"
+          node .\tests\npm-package.test.mjs $package
+
+      - name: Upload Windows runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: DeepSeekHarnessManager-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7

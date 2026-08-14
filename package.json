@@ -1,0 +1,56 @@
+{
+  "name": "dsh-windows-manager",
+  "version": "0.1.0",
+  "description": "Install and control the DeepSeek Harness Manager Windows tray application.",
+  "keywords": [
+    "deepseek",
+    "harness",
+    "windows",
+    "tray",
+    "manager"
+  ],
+  "license": "MIT",
+  "author": "DeepSeek Harness Manager contributors",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kanneiren/dsh-windows-manager.git"
+  },
+  "bugs": {
+    "url": "https://github.com/kanneiren/dsh-windows-manager/issues"
+  },
+  "homepage": "https://github.com/kanneiren/dsh-windows-manager#readme",
+  "type": "commonjs",
+  "os": [
+    "win32"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "dsh-windows-manager": "bin/dsh-windows-manager.js"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "scripts/Install.ps1",
+    "scripts/Uninstall.ps1",
+    "docs/",
+    "AGENTS.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts\\Build.ps1 -SkipTests",
+    "test": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts\\Test.ps1",
+    "test:cli": "node tests/cli.test.mjs",
+    "pack:check": "node scripts/Verify-Package.mjs",
+    "prepack": "npm run build && npm run pack:check",
+    "prepublishOnly": "npm test"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
+}

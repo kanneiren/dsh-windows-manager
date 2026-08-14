@@ -1,0 +1,110 @@
+{
+  "SchemaVersion": 1,
+  "Id": "deepseek-harness-web",
+  "DisplayName": "DeepSeek Harness",
+  "DefaultPort": 3080,
+  "FallbackPortCount": 20,
+  "Probe": {
+    "UrlTemplate": "http://127.0.0.1:{port}/",
+    "Markers": [
+      "<title>DeepSeek Harness</title>",
+      "__DSH_BOOT__"
+    ]
+  },
+  "ProcessPatterns": [
+    "@deepseek-ai[\\\\/]dsh[\\\\/]lib[\\\\/]bin\\.js.*(?:\\sweb(?:\\s|$)|--profile\\s+web)",
+    "apps[\\\\/]cli[\\\\/](?:src|lib)[\\\\/]bin\\.(?:ts|js)"
+  ],
+  "Runtimes": [
+    {
+      "Id": "global",
+      "Label": "Global npm",
+      "Kind": "global",
+      "CommandCandidates": [
+        "%APPDATA%\\npm\\dsh.cmd",
+        "dsh.cmd"
+      ],
+      "RequiredPaths": [],
+      "PrefixArguments": [],
+      "LauncherArguments": [
+        "--profile",
+        "{profile}"
+      ],
+      "ApplicationArguments": [
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "{port}"
+      ],
+      "WorkingDirectory": "{workspace}",
+      "VersionFile": "%APPDATA%\\npm\\node_modules\\@deepseek-ai\\dsh\\package.json"
+    },
+    {
+      "Id": "source",
+      "Label": "Git source checkout",
+      "Kind": "source",
+      "CommandCandidates": [
+        "pnpm.cmd"
+      ],
+      "RequiredPaths": [
+        "{sourceRoot}\\.git",
+        "{sourceRoot}\\package.json",
+        "{sourceRoot}\\pnpm-lock.yaml",
+        "{sourceRoot}\\apps\\cli"
+      ],
+      "PrefixArguments": [
+        "dsh"
+      ],
+      "LauncherArguments": [
+        "--profile",
+        "{profile}"
+      ],
+      "ApplicationArguments": [
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "{port}"
+      ],
+      "WorkingDirectory": "{sourceRoot}",
+      "VersionFile": "{sourceRoot}\\package.json"
+    },
+    {
+      "Id": "npx",
+      "Label": "Pinned npx package",
+      "Kind": "npx",
+      "CommandCandidates": [
+        "npx.cmd"
+      ],
+      "RequiredPaths": [],
+      "PrefixArguments": [
+        "--yes",
+        "@deepseek-ai/dsh@{pinnedVersion}"
+      ],
+      "LauncherArguments": [
+        "--profile",
+        "{profile}"
+      ],
+      "ApplicationArguments": [
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "{port}"
+      ],
+      "WorkingDirectory": "{workspace}",
+      "VersionFile": ""
+    }
+  ],
+  "Update": {
+    "PackageName": "@deepseek-ai/dsh",
+    "RegistryUrl": "https://registry.npmjs.org/@deepseek-ai%2Fdsh/latest",
+    "ReleaseUrl": "https://github.com/deepseek-ai/deepseek-harness/releases",
+    "GithubRepository": "deepseek-ai/deepseek-harness",
+    "GithubBranch": "master",
+    "BundledVersion": "0.1.0-rc.6"
+  },
+  "Companion": {
+    "Enabled": true,
+    "Module": "cordis/windows-lifecycle.mjs",
+    "EntryId": "windows-lifecycle"
+  }
+}

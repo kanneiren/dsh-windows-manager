@@ -1,0 +1,31 @@
+{
+  "SchemaVersion": 1,
+  "Language": "auto",
+  "DefaultInstanceId": "web",
+  "Instances": [
+    {
+      "Id": "web",
+      "Name": "DeepSeek Harness",
+      "PluginId": "deepseek-harness-web",
+      "Profile": "web",
+      "Runtime": "global",
+      "SourceRoot": "",
+      "Workspace": "%USERPROFILE%\\Projects",
+      "DshHome": "",
+      "PreferredPort": 3080,
+      "PinnedVersion": "0.1.0-rc.6"
+    },
+    {
+      "Id": "source-dev",
+      "Name": "DeepSeek Harness Source",
+      "PluginId": "deepseek-harness-web",
+      "Profile": "web",
+      "Runtime": "source",
+      "SourceRoot": "C:\\dev\\deepseek-harness",
+      "Workspace": "C:\\dev\\deepseek-harness",
+      "DshHome": "%LOCALAPPDATA%\\DeepSeekHarnessManager\\homes\\source-dev",
+      "PreferredPort": 3081,
+      "PinnedVersion": "0.1.0-rc.6"
+    }
+  ]
+}

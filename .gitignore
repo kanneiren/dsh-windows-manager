@@ -1,0 +1,28 @@
+# Build and test output
+/dist/
+/TestResults/
+*.log
+*.tgz
+
+# Visual Studio and .NET
+/.vs/
+**/bin/
+!/bin/
+!/bin/**
+**/obj/
+*.suo
+*.user
+
+# Node.js
+/node_modules/
+npm-debug.log*
+
+# Local application data and temporary files
+/config.json
+/.tmp/
+*.tmp
+
+# Operating system files
+.DS_Store
+Thumbs.db
+Desktop.ini
