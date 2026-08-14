@@ -11,6 +11,7 @@ $csc = Join-Path $env:SystemRoot 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 if (-not (Test-Path -LiteralPath $csc -PathType Leaf)) { $csc = Join-Path $env:SystemRoot 'Microsoft.NET\Framework\v4.0.30319\csc.exe' }
 if (-not (Test-Path -LiteralPath $csc -PathType Leaf)) { throw '.NET Framework C# compiler was not found.' }
 if (-not (Test-Path -LiteralPath (Join-Path $assets 'deepseek-whale.ico'))) { throw 'The prebuilt application icon is missing.' }
+if (-not (Test-Path -LiteralPath (Join-Path $assets 'dsh-manager-shortcut.ico'))) { throw 'The prebuilt shortcut icon is missing.' }
 if (Test-Path -LiteralPath $dist) { Remove-Item -LiteralPath $dist -Recurse -Force }
 [System.IO.Directory]::CreateDirectory($dist) | Out-Null
 
@@ -22,12 +23,12 @@ $common = @('/nologo','/noconfig','/langversion:5','/platform:anycpu','/optimize
 if ($LASTEXITCODE -ne 0) { throw "Application compilation failed with exit code $LASTEXITCODE." }
 
 Copy-Item -LiteralPath (Join-Path $projectRoot 'DeepSeekHarnessManager.exe.config') -Destination (Join-Path $dist 'DeepSeekHarnessManager.exe.config') -Force
-foreach ($document in @('README.md', 'config.example.json', 'THIRD_PARTY_NOTICES.md', 'LICENSE', 'SECURITY.md', 'CONTRIBUTING.md', 'AGENTS.md')) {
+foreach ($document in @('README.md', 'README.en.md', 'config.example.json', 'THIRD_PARTY_NOTICES.md', 'LICENSE', 'SECURITY.md', 'SECURITY.en.md', 'CONTRIBUTING.md', 'CONTRIBUTING.en.md', 'AGENTS.md')) {
     Copy-Item -LiteralPath (Join-Path $projectRoot $document) -Destination (Join-Path $dist $document) -Force
 }
 $distAssets = Join-Path $dist 'assets'
 [System.IO.Directory]::CreateDirectory($distAssets) | Out-Null
-foreach ($icon in @('deepseek-whale-running.ico', 'deepseek-whale-starting.ico', 'deepseek-whale-stopped.ico', 'deepseek-whale-conflict.ico', 'deepseek-whale-error.ico')) {
+foreach ($icon in @('dsh-manager-shortcut.ico', 'deepseek-whale-running.ico', 'deepseek-whale-starting.ico', 'deepseek-whale-stopped.ico', 'deepseek-whale-conflict.ico', 'deepseek-whale-error.ico')) {
     Copy-Item -LiteralPath (Join-Path $assets $icon) -Destination (Join-Path $distAssets $icon) -Force
 }
 Copy-Item -LiteralPath (Join-Path $projectRoot 'plugins') -Destination $dist -Recurse -Force

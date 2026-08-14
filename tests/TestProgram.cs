@@ -25,6 +25,7 @@ namespace DeepSeekHarnessManager.Tests
             {
                 Run("plugin catalog", TestPluginCatalog);
                 Run("configuration round trip", TestConfiguration);
+                Run("DSH settings path", TestDshSettingsPath);
                 Run("localization", TestLocalization);
                 Run("semantic versions", TestSemanticVersions);
                 Run("stable inspection cadence", TestInspectionCadence);
@@ -94,14 +95,37 @@ namespace DeepSeekHarnessManager.Tests
             Assert(Math.Abs((next - attempt.AddHours(24)).TotalSeconds) < 2, "running manager update schedule should preserve the 24-hour interval");
         }
 
+        private static void TestDshSettingsPath()
+        {
+            InstanceConfig instance = new InstanceConfig();
+            instance.Workspace = AppPaths.DataDirectory;
+            instance.DshHome = "isolated-home";
+            Assert(AppPaths.DshSettingsFile(instance) == Path.Combine(AppPaths.DataDirectory, "isolated-home", "settings.yaml"), "relative DSH home should resolve from the workspace");
+
+            string previous = Environment.GetEnvironmentVariable("DSH_HOME");
+            try
+            {
+                string environmentHome = Path.Combine(AppPaths.DataDirectory, "environment-home");
+                Environment.SetEnvironmentVariable("DSH_HOME", environmentHome);
+                instance.DshHome = String.Empty;
+                Assert(AppPaths.DshSettingsFile(instance) == Path.Combine(environmentHome, "settings.yaml"), "DSH_HOME should select the settings file");
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("DSH_HOME", previous);
+            }
+        }
+
         private static void TestLocalization()
         {
             Localization.Initialize("en-US");
             Assert(Localization.CurrentLanguage == "en-US", "English locale was not selected");
             Assert(Localization.Text("Menu.OpenWeb") == "Open Web UI", "English locale value is missing");
+            Assert(Localization.Text("Menu.OpenManagerConfig") == "Open manager configuration file", "manager configuration label is missing");
             Localization.Initialize("zh-CN");
             Assert(Localization.CurrentLanguage == "zh-CN", "Chinese locale was not selected");
             Assert(Localization.Text("Menu.OpenWeb") == "\u6253\u5f00 Web UI", "Chinese locale value is missing");
+            Assert(Localization.Text("Menu.OpenDshSettings") == "\u6253\u5f00 DSH \u914d\u7f6e\u6587\u4ef6", "DSH settings label is missing");
             Assert(Localization.Text("Missing.Test.Key") == "Missing.Test.Key", "missing locale keys should return their key");
             Localization.Initialize("auto");
         }

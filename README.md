@@ -1,10 +1,14 @@
 # DeepSeek Harness Manager
 
-`DeepSeek Harness Manager` 是一个面向 Windows 11 的轻量托盘管理器。桌面快捷方式名称为 `DeepSeek Harness`。
+[**中文**](README.md) | [English](README.en.md)
 
-它使用 Windows 11 自带的 .NET Framework 4.8 WinForms，正式运行不依赖 PowerShell 7、Electron 或第三方托盘框架。当前可执行文件约 100 KB。
+[![Windows CI](https://github.com/kanneiren/dsh-windows-manager/actions/workflows/windows-ci.yml/badge.svg?branch=main)](https://github.com/kanneiren/dsh-windows-manager/actions/workflows/windows-ci.yml)
 
-名称约定：桌面软件称为 `DeepSeek Harness Manager`，GitHub 项目和 npm 安装包称为 `dsh-windows-manager`。它管理的 `@deepseek-ai/dsh` 是另一个上游 npm 包。
+`DeepSeek Harness Manager` 是面向 Windows 11 的本地托盘控制器，用于启动、打开、停止、重启和更新 DeepSeek Harness（DSH），并显示端口、进程、版本和运行状态。
+
+DSH（npm 包 `@deepseek-ai/dsh`）是实际提供 Web UI 和 Agent 能力的程序；本项目负责在 Windows 上安装和控制 DSH，不包含或替代 DSH 本体。安装管理器后会创建名为 `DSH Manager` 的桌面快捷方式，双击即可启动或打开 DSH Web UI。本项目是独立的非官方第三方管理器，不隶属于 DeepSeek，也不代表其认可或背书。
+
+管理器以当前用户权限运行，默认只让 DSH 监听 `127.0.0.1`，不注册 Windows 服务，也不自动结束未知进程。界面使用 .NET Framework 4.8 WinForms，不依赖 PowerShell 7、Electron 或第三方托盘框架。当前 `0.1.0` 构建的 EXE 约 115 kB，npm tarball 约 150 kB。
 
 ## 项目文档
 
@@ -34,7 +38,7 @@
 安装时，将下面这句话发给具有终端权限的编码 Agent：
 
 ```text
-请为当前 Windows 用户安装最新版 DeepSeek Harness Manager：确认 Node.js 18+ 和 npm 可用后，执行 npx --yes dsh-windows-manager install；官方源失败时，可在记录原 registry 后临时切换至 https://registry.npmmirror.com。安装后运行 npx --yes dsh-windows-manager status，确认桌面快捷方式和 Web UI 可用。不要请求管理员权限、覆盖已有 config.json 或删除用户数据，最后报告安装结果和 registry 变更。
+请为当前 Windows 用户安装最新版 DeepSeek Harness Manager：确认 Node.js 18+ 和 npm 可用后，执行 npx --yes dsh-windows-manager install；官方源失败时，可在记录原 registry 后临时切换至 https://registry.npmmirror.com。安装后确认桌面快捷方式存在，再运行 npx --yes dsh-windows-manager status --json，等待 managerRunning 和默认实例的 webUiVerified 为 true。不要请求管理员权限、覆盖已有 config.json 或删除用户数据，最后报告安装结果和 registry 变更。
 ```
 
 卸载时，将下面这句话发给 Agent：
@@ -65,11 +69,11 @@ Install.cmd
 
 桌面快捷方式直接启动 `DeepSeekHarnessManager.exe`，正常使用不会显示终端窗口。
 
-安装目录只包含运行软件所需的 EXE、语言包、插件、图标和文档，不包含 `src`、`tests` 或构建脚本。配置、状态和日志放在应用目录之外，因此覆盖安装默认不会删除用户数据。
+安装目录只包含运行软件所需的 EXE、语言包、运行适配器、图标和文档，不包含 `src`、`tests` 或构建脚本。配置、状态和日志放在应用目录之外，因此覆盖安装默认不会删除用户数据。
 
 ### npm 命令行安装
 
-npm 包发布后可直接运行：
+可直接运行：
 
 ```text
 npx --yes dsh-windows-manager install
@@ -100,17 +104,28 @@ dsh-windows-manager uninstall --purge-data
 
 `start` 只启动 DSH，`open` 会启动并打开 Web UI。`uninstall` 默认保留配置和日志；`--purge-data` 才会完全清理。
 
-`3080` 只是新实例的默认端口，并非写死。新安装可通过 `--port 4000` 指定；已有安装不会因再次执行安装命令而覆盖配置，应在托盘菜单打开 `config.json`，修改实例的 `PreferredPort` 后退出并重新启动管理器。管理器会显式向 DSH 传递 `--port`，外部手动启动的 DSH 也只有在端口与实例配置一致时才会被安全接管。
+`3080` 只是新实例的默认端口，并非写死。新安装可通过 `--port 4000` 指定；已有安装不会因再次执行安装命令而覆盖配置，应通过托盘菜单打开管理器配置文件，修改 `config.json` 中实例的 `PreferredPort`，然后退出并重新启动管理器。管理器会显式向 DSH 传递 `--port`，外部手动启动的 DSH 也只有在端口与实例配置一致时才会被安全接管。
 
 ### 卸载
 
-双击 `Uninstall.cmd` 会移除程序和桌面快捷方式，默认保留配置与日志，也不会结束正在运行的 DSH。
+使用 npm 或 npx 安装时运行：
+
+```text
+npx --yes dsh-windows-manager uninstall
+```
+
+从源码安装时，可双击源码仓库中的 `Uninstall.cmd`。
+
+默认卸载会删除应用目录和桌面快捷方式，但保留整个数据目录（配置、状态、日志、运行时状态和更新记录），也不会结束正在运行的 DSH。
 
 完全清理数据：
 
-```powershell
+```text
+npx --yes dsh-windows-manager uninstall --purge-data
 powershell.exe -ExecutionPolicy Bypass -File .\scripts\Uninstall.ps1 -PurgeData
 ```
+
+第二条命令仅用于源码仓库。若曾全局安装 CLI，还可运行 `npm uninstall --global dsh-windows-manager` 删除全局命令。
 
 ### 中国大陆网络
 
@@ -131,7 +146,7 @@ npx --yes dsh-windows-manager install
 
 ## 打开方式
 
-- 双击桌面快捷方式 `DeepSeek Harness`：DSH 已运行时直接打开 Web UI；未运行时先启动，等待就绪后再打开。
+- 双击桌面快捷方式 `DSH Manager`：DSH 已运行时直接打开 Web UI；未运行时先启动，等待就绪后再打开。
 - 双击托盘图标：打开默认实例的 Web UI。
 - 命令行运行 `npx --yes dsh-windows-manager open`：执行与桌面快捷方式相同的操作。
 
@@ -183,9 +198,12 @@ powershell.exe -ExecutionPolicy Bypass -File .\scripts\Install.ps1 `
 - `Install available update`：仅发现新版时出现，必须再次确认。
 - `Status details`：显示端口、PID、路径、指纹、工作区和日志。
 - `Open workspace`：打开实例工作目录。
+- `打开 DSH 配置文件`：打开该实例 `settings.yaml` 所在的 `DSH_HOME` 目录，不直接启动 YAML 编辑器。
 - `DSH plugin marketplace`：打开 GitHub 插件发现页。
-- `Open configuration file`：打开 JSON 配置。
+- `打开管理器配置文件`：打开管理器的 `%LOCALAPPDATA%\DeepSeekHarnessManager\config.json`。
 - `Open logs`：打开日志目录。
+- `Language / 语言`：在跟随 Windows、简体中文和 English 之间切换。
+- `About`：显示管理器版本和 .NET 运行时。
 - `Exit manager (leave DSH running)`：只退出托盘，保持 DSH 服务运行。
 
 多个实例时，每个实例拥有独立子菜单。
@@ -243,11 +261,11 @@ powershell.exe -ExecutionPolicy Bypass -File .\scripts\Install.ps1 `
 
 `config.example.json` 展示了 npm 日常实例和源码开发实例同时运行的配置。每个实例应使用独立端口。
 
-需要强隔离时，为每个实例配置不同的 `DshHome`。这样可以避免并行进程共享活动会话状态；留空表示使用默认 `~/.dsh`。
+需要强隔离时，为每个实例配置不同的 `DshHome`。这样可以避免并行进程共享活动会话状态；留空表示使用环境变量 `DSH_HOME`，环境变量也为空时使用默认 `~/.dsh`。实例菜单中的“打开 DSH 配置文件”会按同一规则打开 `settings.yaml` 所在目录，不会直接打开 YAML 或包含密钥的 `.credentials.yaml`。
 
-管理器只创建一个托盘图标。配置一个实例时，操作项直接显示；配置多个实例时，每个实例按 `Name` 显示为独立子菜单，并拥有自己的状态、版本、打开、启动、停止、重启、更新、详情和工作区操作。
+管理器只创建一个托盘图标。配置一个实例时，操作项直接显示；配置多个实例时，每个实例按 `Name` 显示为独立子菜单，并拥有自己的状态、版本、打开、启动、停止、重启、更新、详情、工作区和 DSH 设置文件操作。
 
-当前没有添加实例的图形界面。通过托盘菜单打开 `config.json`，在 `Instances` 中加入具有唯一 `Id` 和 `PreferredPort` 的配置，然后退出并重新启动管理器。桌面快捷方式、托盘双击以及 CLI 的 `open`、`start`、`stop`、`restart` 默认只操作 `DefaultInstanceId`；`dsh-windows-manager status` 会列出全部实例。
+当前没有添加实例的图形界面。通过托盘菜单打开管理器配置文件，在 `config.json` 的 `Instances` 中加入具有唯一 `Id` 和 `PreferredPort` 的配置，然后退出并重新启动管理器。桌面快捷方式、托盘双击以及 CLI 的 `open`、`start`、`stop`、`restart` 默认只操作 `DefaultInstanceId`；`dsh-windows-manager status` 会列出全部实例。
 
 ## 权限和安全软件
 
@@ -294,7 +312,7 @@ Test.cmd
 
 `https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/web/public/favicon.svg`
 
-上游仓库许可证：MIT。仓库和发布包直接提供已生成的图标，用户无需生成。
+上游仓库许可证：MIT。EXE 和托盘状态图标沿用该图案；`DSH Manager` 桌面快捷方式使用基于鲸鱼图案生成并叠加管理器徽标的独立图标。仓库和发布包直接提供全部预生成图标，用户无需生成。
 
 ## 开源协议
 

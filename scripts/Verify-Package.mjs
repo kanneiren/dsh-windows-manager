@@ -7,11 +7,16 @@ const metadata = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'ut
 const required = [
   'dist/DeepSeekHarnessManager.exe',
   'dist/DeepSeekHarnessManager.exe.config',
+  'dist/assets/dsh-manager-shortcut.ico',
   'dist/assets/deepseek-whale-running.ico',
   'dist/assets/deepseek-whale-stopped.ico',
   'dist/LICENSE',
+  'dist/README.md',
+  'dist/README.en.md',
   'dist/SECURITY.md',
+  'dist/SECURITY.en.md',
   'dist/CONTRIBUTING.md',
+  'dist/CONTRIBUTING.en.md',
   'dist/AGENTS.md',
   'dist/docs/ARCHITECTURE.md',
   'dist/docs/FEATURES.md',
@@ -23,7 +28,11 @@ const required = [
   'dist/plugins/deepseek-harness-web/cordis/windows-lifecycle.mjs',
   'bin/dsh-windows-manager.js',
   'scripts/Install.ps1',
-  'scripts/Uninstall.ps1'
+  'scripts/Uninstall.ps1',
+  'README.md',
+  'README.en.md',
+  'SECURITY.en.md',
+  'CONTRIBUTING.en.md'
 ];
 
 for (const relativePath of required) {

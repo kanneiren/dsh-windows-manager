@@ -39,6 +39,20 @@ function Stop-InstalledManager {
     }
 }
 
+function Remove-ShortcutIfTarget {
+    param([string]$Path, [string]$Executable)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return }
+    try {
+        $shell = New-Object -ComObject WScript.Shell
+        $shortcut = $shell.CreateShortcut($Path)
+        if (-not [string]::IsNullOrWhiteSpace($shortcut.TargetPath) -and
+            [string]::Equals([System.IO.Path]::GetFullPath($shortcut.TargetPath), [System.IO.Path]::GetFullPath($Executable), [System.StringComparison]::OrdinalIgnoreCase)) {
+            Remove-Item -LiteralPath $Path -Force
+        }
+    } catch {
+    }
+}
+
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $defaultDist = [string]::IsNullOrWhiteSpace($DistPath)
 $dist = if ($defaultDist) { Join-Path $projectRoot 'dist' } else { [System.IO.Path]::GetFullPath($DistPath) }
@@ -69,7 +83,7 @@ Stop-InstalledManager -Executable $installedExe
 
 Copy-Item -LiteralPath $builtExe -Destination $installedExe -Force
 Copy-Item -LiteralPath (Join-Path $dist 'DeepSeekHarnessManager.exe.config') -Destination (Join-Path $installRoot 'DeepSeekHarnessManager.exe.config') -Force
-foreach ($document in @('README.md', 'config.example.json', 'THIRD_PARTY_NOTICES.md', 'LICENSE', 'SECURITY.md', 'CONTRIBUTING.md', 'AGENTS.md')) {
+foreach ($document in @('README.md', 'README.en.md', 'config.example.json', 'THIRD_PARTY_NOTICES.md', 'LICENSE', 'SECURITY.md', 'SECURITY.en.md', 'CONTRIBUTING.md', 'CONTRIBUTING.en.md', 'AGENTS.md')) {
     Copy-Item -LiteralPath (Join-Path $dist $document) -Destination (Join-Path $installRoot $document) -Force
 }
 foreach ($directory in @('assets', 'plugins', 'locales', 'docs')) {
@@ -105,8 +119,13 @@ if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
     [System.IO.File]::WriteAllText($configPath, ($config | ConvertTo-Json -Depth 8), [System.Text.UTF8Encoding]::new($false))
 }
 
-$resolvedShortcutPath = if ([string]::IsNullOrWhiteSpace($ShortcutPath)) { Join-Path ([Environment]::GetFolderPath('Desktop')) 'DeepSeek Harness.lnk' } else { [System.IO.Path]::GetFullPath($ShortcutPath) }
+$usesDefaultShortcut = [string]::IsNullOrWhiteSpace($ShortcutPath)
+$desktop = [Environment]::GetFolderPath('Desktop')
+$resolvedShortcutPath = if ($usesDefaultShortcut) { Join-Path $desktop 'DSH Manager.lnk' } else { [System.IO.Path]::GetFullPath($ShortcutPath) }
 if (-not $NoShortcut) {
+    $shortcutIcon = Join-Path $installRoot 'assets\dsh-manager-shortcut.ico'
+    if (-not (Test-Path -LiteralPath $shortcutIcon -PathType Leaf)) { throw 'The prebuilt shortcut icon is missing.' }
+    if ($usesDefaultShortcut) { Remove-ShortcutIfTarget -Path (Join-Path $desktop 'DeepSeek Harness.lnk') -Executable $installedExe }
     $shortcutDirectory = Split-Path -Parent $resolvedShortcutPath
     if (-not [string]::IsNullOrWhiteSpace($shortcutDirectory)) { [System.IO.Directory]::CreateDirectory($shortcutDirectory) | Out-Null }
     $shell = New-Object -ComObject WScript.Shell
@@ -114,7 +133,7 @@ if (-not $NoShortcut) {
     $shortcut.TargetPath = $installedExe
     $shortcut.Arguments = '--action open'
     $shortcut.WorkingDirectory = $Workspace
-    $shortcut.IconLocation = "$installedExe,0"
+    $shortcut.IconLocation = "$shortcutIcon,0"
     $shortcut.Description = 'Start or open DeepSeek Harness and manage it from the Windows notification area.'
     $shortcut.Save()
 }

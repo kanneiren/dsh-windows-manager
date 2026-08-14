@@ -114,9 +114,9 @@ namespace DeepSeekHarnessManager
                 marketplace.Click += delegate { OpenUrl(marketplaceUrl); };
                 menu.Items.Add(marketplace);
             }
-            ToolStripMenuItem openConfig = new ToolStripMenuItem(Localization.Text("Menu.OpenConfig"));
-            openConfig.Click += delegate { OpenFile(AppPaths.ConfigFile); };
-            menu.Items.Add(openConfig);
+            ToolStripMenuItem openManagerConfig = new ToolStripMenuItem(Localization.Text("Menu.OpenManagerConfig"));
+            openManagerConfig.Click += delegate { OpenConfigurationFile(AppPaths.ConfigFile); };
+            menu.Items.Add(openManagerConfig);
             ToolStripMenuItem openLogs = new ToolStripMenuItem(Localization.Text("Menu.OpenLogs"));
             openLogs.Click += delegate { OpenFolder(AppPaths.LogDirectory); };
             menu.Items.Add(openLogs);
@@ -137,7 +137,7 @@ namespace DeepSeekHarnessManager
             ToolStripMenuItem about = new ToolStripMenuItem(Localization.Text("Menu.About"));
             about.Click += delegate
             {
-                MessageBox.Show(Localization.Format("About.Body", String.Join(", ", controllers.Select(delegate(InstanceController item) { return item.Plugin.Id; }).Distinct().ToArray())),
+                MessageBox.Show(Localization.Format("About.Body", Application.ProductVersion),
                     Localization.Text("App.Title"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             };
             menu.Items.Add(about);
@@ -162,6 +162,7 @@ namespace DeepSeekHarnessManager
             binding.UpdateNow = new ToolStripMenuItem(Localization.Text("Menu.InstallUpdate"));
             binding.Details = new ToolStripMenuItem(Localization.Text("Menu.Details"));
             binding.Workspace = new ToolStripMenuItem(Localization.Text("Menu.Workspace"));
+            ToolStripMenuItem dshSettings = new ToolStripMenuItem(Localization.Text("Menu.OpenDshSettings"));
 
             binding.Open.Click += delegate { controller.OpenOrStart(null); };
             binding.Start.Click += delegate { controller.Start(controller.Config.PreferredPort, false, null); };
@@ -171,6 +172,7 @@ namespace DeepSeekHarnessManager
             binding.UpdateNow.Click += delegate { updateManager.ExecuteConfirmedUpdate(controller, null); RefreshUi(); };
             binding.Details.Click += delegate { MessageBox.Show(controller.GetDetails(), Localization.Text("Details.Title"), MessageBoxButtons.OK, MessageBoxIcon.Information); };
             binding.Workspace.Click += delegate { OpenFolder(controller.Config.Workspace); };
+            dshSettings.Click += delegate { OpenFolder(Path.GetDirectoryName(AppPaths.DshSettingsFile(controller.Config))); };
 
             items.Add(binding.Status);
             items.Add(binding.Version);
@@ -185,6 +187,7 @@ namespace DeepSeekHarnessManager
             items.Add(new ToolStripSeparator());
             items.Add(binding.Details);
             items.Add(binding.Workspace);
+            items.Add(dshSettings);
             menuBindings.Add(controller.Config.Id, binding);
         }
 
@@ -409,9 +412,30 @@ namespace DeepSeekHarnessManager
             }
         }
 
-        private static void OpenFile(string path)
+        private static void OpenConfigurationFile(string path)
         {
-            Process.Start(new ProcessStartInfo("notepad.exe", CommandRunner.QuoteArgument(path)) { UseShellExecute = true });
+            try
+            {
+                if (!File.Exists(path))
+                {
+                    OpenFolder(Path.GetDirectoryName(path));
+                    MessageBox.Show(Localization.Format("Dialog.ConfigFileMissing", path), Localization.Text("App.Title"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+                Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+            }
+            catch (Exception exception)
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo("notepad.exe", CommandRunner.QuoteArgument(path)) { UseShellExecute = true });
+                }
+                catch (Exception fallbackException)
+                {
+                    FileLog.Error("Could not open configuration file " + path + ": " + exception.Message + "; Notepad fallback: " + fallbackException.Message);
+                    MessageBox.Show(Localization.Format("Dialog.OpenFileFailed", path, fallbackException.Message), Localization.Text("App.Title"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            }
         }
 
         private sealed class InstanceMenuBinding

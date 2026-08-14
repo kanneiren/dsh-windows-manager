@@ -29,7 +29,7 @@ Application files are installed under:
 
 This directory contains the EXE, `.exe.config`, assets, locales, plugin manifests, the Cordis bridge, license, and user documentation. It intentionally excludes source code, tests, and build tools.
 
-The EXE embeds the desktop shortcut icon. The runtime assets directory contains only five small tray-state ICO files; source PNG and SVG files remain in the repository as source references but are not published in the runtime payload.
+The EXE embeds the base whale icon. The runtime assets directory contains five small tray-state ICO files plus a separate whale-based manager icon for the desktop shortcut; source PNG and SVG files remain in the repository as source references but are not published in the runtime payload.
 
 Mutable data is stored separately:
 
@@ -64,9 +64,9 @@ The manager always launches DSH with explicit `--host 127.0.0.1 --port <port>` a
 
 If the configured port is occupied by another process, the user may cancel, choose a bounded fallback port, inspect the owner, or explicitly request safe termination. The selected fallback is recorded in instance state so the running process can be found again.
 
-One configured instance produces a flat tray menu. Multiple instances produce one submenu per instance. Desktop double-click and action commands target `DefaultInstanceId`; the npm `status` command reports all instances.
+One configured instance produces a flat tray menu. Multiple instances produce one submenu per instance. Each instance menu resolves its own `DSH_HOME` and can open the directory containing `settings.yaml`; the global manager configuration item opens `config.json` directly. Desktop double-click and action commands target `DefaultInstanceId`; the npm `status` command reports all instances.
 
-Use a separate `DshHome` for strong state isolation. Leaving it empty intentionally shares the upstream default `~/.dsh` state.
+Use a separate `DshHome` for strong state isolation. An empty value inherits `DSH_HOME` and falls back to the upstream default `~/.dsh` when that environment variable is also empty.
 
 ## Lifecycle Flows
 
@@ -88,7 +88,7 @@ Every update is a transaction. The manager records the old version or source com
 
 ## Packaging
 
-`scripts/Build.ps1` creates a clean `dist/` directory. `package.json` exposes `bin/dsh-windows-manager.js` and publishes a files allowlist containing only the CLI, runtime payload, installer scripts, README, and license.
+`scripts/Build.ps1` creates a clean `dist/` directory. `package.json` publishes the CLI, `dist/` runtime payload, installer scripts, `docs/`, `AGENTS.md`, both contribution guides, both security policies, both README files, and `LICENSE`.
 
 Installing the npm package has no `postinstall` side effect. The explicit CLI `install` command copies the packaged runtime into LocalAppData. This makes both global npm installation and temporary npx cache installation safe: the application does not depend on the npm cache after installation.
 

@@ -16,7 +16,7 @@ const cli = path.join(projectRoot, 'bin', 'dsh-windows-manager.js');
 const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-manager-cli-'));
 const installRoot = path.join(temporaryRoot, 'app');
 const dataRoot = path.join(temporaryRoot, 'data');
-const shortcutPath = path.join(temporaryRoot, 'Desktop', 'DeepSeek Harness.lnk');
+const shortcutPath = path.join(temporaryRoot, 'Desktop', 'DSH Manager.lnk');
 const environment = {
   ...process.env,
   DSH_MANAGER_INSTALL_ROOT: installRoot,
@@ -42,10 +42,13 @@ try {
   assert.equal(result.status, 0, result.stderr);
   assert.ok(fs.existsSync(path.join(installRoot, 'DeepSeekHarnessManager.exe')));
   assert.ok(fs.existsSync(path.join(installRoot, 'assets', 'deepseek-whale-running.ico')));
+  assert.ok(fs.existsSync(path.join(installRoot, 'assets', 'dsh-manager-shortcut.ico')));
   assert.equal(fs.existsSync(path.join(installRoot, 'assets', 'deepseek-whale.png')), false);
   assert.ok(fs.existsSync(path.join(installRoot, 'locales', 'zh-CN.json')));
   assert.ok(fs.existsSync(path.join(installRoot, 'LICENSE')));
   assert.ok(fs.existsSync(path.join(installRoot, 'SECURITY.md')));
+  assert.ok(fs.existsSync(path.join(installRoot, 'SECURITY.en.md')));
+  assert.ok(fs.existsSync(path.join(installRoot, 'CONTRIBUTING.en.md')));
   assert.ok(fs.existsSync(path.join(installRoot, 'docs', 'ARCHITECTURE.md')));
   assert.equal(fs.existsSync(shortcutPath), false);
 
@@ -72,11 +75,28 @@ try {
   assert.equal(fs.existsSync(installRoot), false);
   assert.equal(fs.existsSync(configPath), true);
 
-  result = run(['install', '--no-launch', '--no-shortcut', '--workspace', temporaryRoot]);
+  result = run(['install', '--no-launch', '--workspace', temporaryRoot]);
   assert.equal(result.status, 0, result.stderr);
-  result = run(['uninstall', '--purge-data', '--no-shortcut']);
+  assert.ok(fs.existsSync(shortcutPath));
+  const inspectShortcut = spawnSync('powershell.exe', [
+    '-NoLogo',
+    '-NoProfile',
+    '-Command',
+    '$shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($env:DSH_MANAGER_TEST_SHORTCUT); [pscustomobject]@{ TargetPath = $shortcut.TargetPath; IconLocation = $shortcut.IconLocation } | ConvertTo-Json -Compress'
+  ], {
+    encoding: 'utf8',
+    env: { ...process.env, DSH_MANAGER_TEST_SHORTCUT: shortcutPath },
+    windowsHide: true
+  });
+  assert.equal(inspectShortcut.status, 0, inspectShortcut.stderr);
+  const shortcut = JSON.parse(inspectShortcut.stdout);
+  assert.equal(fs.realpathSync.native(shortcut.TargetPath).toLowerCase(), fs.realpathSync.native(path.join(installRoot, 'DeepSeekHarnessManager.exe')).toLowerCase());
+  assert.equal(fs.realpathSync.native(shortcut.IconLocation.replace(/,0$/, '')).toLowerCase(), fs.realpathSync.native(path.join(installRoot, 'assets', 'dsh-manager-shortcut.ico')).toLowerCase());
+
+  result = run(['uninstall', '--purge-data']);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(fs.existsSync(dataRoot), false);
+  assert.equal(fs.existsSync(shortcutPath), false);
 
   result = run(['--version']);
   assert.equal(result.status, 0);

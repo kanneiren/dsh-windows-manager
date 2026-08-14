@@ -1,6 +1,6 @@
 # Manager Plugin Contract
 
-The host discovers `plugins/*/plugin.json`. Each manifest declares all product-specific behavior; the WinForms host contains no DeepSeek package name, process regex, HTTP marker, runtime command, registry endpoint, or Cordis module path.
+The host recursively discovers `plugins/**/plugin.json`. Each manifest declares all product-specific behavior; the WinForms host contains no DeepSeek package name, process regex, HTTP marker, runtime command, registry endpoint, or Cordis module path.
 
 Schema version 1 fields:
 
@@ -22,5 +22,7 @@ Supported tokens:
 - `{pinnedVersion}`
 - `{patchPath}`
 - `{port}`
+
+`{commandDir}` is the directory containing the resolved runtime command. It is available after `CommandCandidates` resolution for requirements, arguments, the working directory, and `VersionFile`, but not inside `CommandCandidates`. The global runtime uses it so custom npm prefixes resolve the correct package version.
 
 Plugin manifests are trusted executable configuration. The Cordis companion is loaded into DSH with the same authority as other Harness plugins. Install plugins only from trusted sources.

@@ -37,9 +37,12 @@
     "docs/",
     "AGENTS.md",
     "CONTRIBUTING.md",
+    "CONTRIBUTING.en.md",
     "SECURITY.md",
+    "SECURITY.en.md",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "README.en.md"
   ],
   "scripts": {
     "build": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts\\Build.ps1 -SkipTests",

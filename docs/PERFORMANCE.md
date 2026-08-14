@@ -21,7 +21,7 @@ Test environment: Windows 11, 32 logical processors, one verified DSH instance r
 
 Working set includes shared and file-backed .NET Framework and WinForms pages that Windows can reclaim. Private memory is the more useful approximation of memory dedicated to the manager.
 
-The only steady network activity for a running instance is a loopback HTTP health check every five seconds. With the current roughly 12 KB HTML response, this is approximately 2.4 KB/s over `127.0.0.1`, not internet traffic. Automatic external update checks run at most once per 24 hours.
+The only steady network activity for a running instance is a loopback HTTP health check every five seconds. With the current roughly 12 KB HTML response, this is approximately 2.4 KB/s over `127.0.0.1`, not internet traffic. For each configured instance/runtime, automatic external update checks run at most once per 24 hours; multiple instances may each perform a check.
 
 ## Optimizations
 

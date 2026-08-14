@@ -22,7 +22,7 @@ const environment = {
   ...process.env,
   DSH_MANAGER_INSTALL_ROOT: installRoot,
   DSH_MANAGER_DATA_ROOT: dataRoot,
-  DSH_MANAGER_SHORTCUT_PATH: path.join(temporaryRoot, 'Desktop', 'DeepSeek Harness.lnk')
+  DSH_MANAGER_SHORTCUT_PATH: path.join(temporaryRoot, 'Desktop', 'DSH Manager.lnk')
 };
 const npmCli = process.env.npm_execpath && process.env.npm_execpath.endsWith('.js')
   ? process.env.npm_execpath
@@ -44,6 +44,10 @@ try {
   let result = execute(['install', '--no-launch', '--no-shortcut', '--workspace', temporaryRoot]);
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.ok(fs.existsSync(path.join(installRoot, 'DeepSeekHarnessManager.exe')));
+  assert.ok(fs.existsSync(path.join(installRoot, 'README.md')));
+  assert.ok(fs.existsSync(path.join(installRoot, 'README.en.md')));
+  assert.ok(fs.existsSync(path.join(installRoot, 'SECURITY.en.md')));
+  assert.ok(fs.existsSync(path.join(installRoot, 'CONTRIBUTING.en.md')));
   assert.ok(fs.existsSync(path.join(dataRoot, 'config.json')));
 
   result = execute(['status', '--json']);

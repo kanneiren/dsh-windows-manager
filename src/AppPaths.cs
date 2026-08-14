@@ -37,6 +37,24 @@ namespace DeepSeekHarnessManager
         public static string UpdateDirectory { get { return Path.Combine(DataDirectory, "updates"); } }
         public static string ManagerLog { get { return Path.Combine(LogDirectory, "manager.log"); } }
 
+        public static string DshSettingsFile(InstanceConfig instance)
+        {
+            if (instance == null) throw new ArgumentNullException("instance");
+            string home = instance.DshHome;
+            if (String.IsNullOrWhiteSpace(home)) home = Environment.GetEnvironmentVariable("DSH_HOME");
+            if (String.IsNullOrWhiteSpace(home))
+                home = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dsh");
+            home = Environment.ExpandEnvironmentVariables(home);
+            if (!Path.IsPathRooted(home))
+            {
+                string workspace = String.IsNullOrWhiteSpace(instance.Workspace)
+                    ? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+                    : instance.Workspace;
+                home = Path.Combine(workspace, home);
+            }
+            return Path.Combine(Path.GetFullPath(home), "settings.yaml");
+        }
+
         public static void EnsureDirectories()
         {
             Directory.CreateDirectory(DataDirectory);

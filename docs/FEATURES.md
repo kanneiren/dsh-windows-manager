@@ -14,6 +14,7 @@
 | Discovery | Combined HTTP content and process-command fingerprints |
 | Ports | Configurable preferred port, bounded fallback selection, conflict details |
 | Multi-instance | Independent menu, status, port, workspace, runtime, and optional DSH home |
+| Configuration | Separate menu actions for manager `config.json` and each instance's DSH settings directory |
 | Shutdown | Authenticated Cordis `ctx.appExit(0)` bridge with guarded manual fallback |
 | Updates | 24-hour checks, confirmed installation, isolated compatibility smoke test, and verified rollback |
 | Performance | One-second command response with five-second stable health probes and cached immutable process fingerprints |
@@ -54,6 +55,6 @@ Adding, removing, or changing instances currently requires editing `config.json`
 - No unrestricted network binding.
 - No full-port-range scan for external DSH processes.
 - No automatic taskbar pinning.
-- No commercial code-signing certificate in the current release.
+- No commercial code-signing certificate; current builds are unsigned.
 
 These exclusions preserve explicit user control, local-only networking, and auditable process behavior.

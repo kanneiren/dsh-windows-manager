@@ -1,57 +1,58 @@
-# Security Policy and Design
+# 安全政策与设计
+[**中文**](SECURITY.md) | [English](SECURITY.en.md)
 
-## Reporting a Vulnerability
+## 漏洞报告
 
-After the GitHub repository is published, report suspected vulnerabilities through the repository's private Security Advisory interface. Do not include tokens, private logs, personal paths, or exploit details in a public issue.
+请通过 https://github.com/kanneiren/dsh-windows-manager/security/advisories/new 私下报告疑似漏洞。请勿在公开议题中包含令牌、非公开日志、个人路径或漏洞利用细节。
 
-Include the manager version, Windows version, runtime type, reproduction steps, expected behavior, and the smallest sanitized log excerpt needed to diagnose the problem.
+请提供管理器版本、Windows 版本、运行时类型、复现步骤、预期行为，以及诊断问题所需且经过脱敏的最小日志片段。
 
-## Trust Boundaries
+## 信任边界
 
-The manager trusts its installed files, user-owned configuration, declared plugin manifests, and commands explicitly selected by the user. It does not trust an arbitrary process merely because it listens on the expected port or runs as `node.exe`.
+管理器信任其安装文件、用户自有配置、已声明的插件清单，以及用户明确选择的命令。它不会仅因某个进程监听预期端口或以 `node.exe` 运行，就信任该进程。
 
-The DSH Web UI is launched with `--host 127.0.0.1`. The lifecycle bridge uses a local Windows named pipe rather than a network port.
+DSH Web UI 使用 `--host 127.0.0.1` 启动。生命周期桥接机制使用本地 Windows 命名管道，而不是网络端口。
 
-## Process Identification
+## 进程识别
 
-A running instance is considered DSH only when the HTTP response contains declared DSH markers and the owning process command line matches declared DSH patterns. A single matching signal is insufficient for normal adoption.
+仅当运行中实例的 HTTP 响应包含已声明的 DSH 标记，且该实例所属进程的命令行匹配已声明的 DSH 模式时，才会将其认定为 DSH。正常接管时，仅有一个信号匹配并不足够。
 
-Before ending any process, the manager reacquires the port owner and verifies PID, process start time, executable path, Windows session, system-directory location, and hosted Windows services. System processes, the manager itself, processes from another session, unverifiable paths, Windows-directory processes, and service hosts are protected.
+在终止任何进程之前，管理器会再次查询端口占用进程，并核验其 PID、进程启动时间、可执行文件路径、Windows 会话、是否位于系统目录，以及所承载的 Windows 服务。系统进程、管理器自身、其他会话中的进程、路径无法核验的进程、Windows 目录中的进程，以及服务宿主进程均受保护。
 
-Unknown processes are never terminated automatically. The user must request termination, and forced termination requires a second confirmation after a normal close attempt fails.
+未知进程绝不会被自动终止。用户必须主动请求终止；只有在正常关闭尝试失败并经过第二次确认后，才会强制终止。
 
-An externally started DSH process that does not become Web-ready is not automatically terminated on a readiness timeout. Startup cleanup is limited to a process launched by the current manager operation.
+外部启动的 DSH 进程若未进入 Web 就绪状态，不会因就绪等待超时而被自动终止。启动清理仅限当前管理器操作所启动的进程。
 
-## Graceful Shutdown
+## 优雅关闭
 
-Each manager-launched DSH instance receives a unique named-pipe name and a random 256-bit hexadecimal token through a generated local patch. A shutdown request must authenticate with that token before the DSH-side plugin calls `ctx.appExit(0)`.
+每个由管理器启动的 DSH 实例都会通过生成的本地补丁，获得唯一的命名管道名称和随机生成的 256 位十六进制令牌。关闭请求必须先使用该令牌通过身份验证，DSH 端插件才会调用 `ctx.appExit(0)`。
 
-Pipe names and tokens are launch-specific. They are not listening TCP endpoints. A failed or unavailable bridge does not silently fall back to killing the process.
+管道名称和令牌均仅用于对应的单次启动。它们并非监听中的 TCP 端点。桥接失败或不可用时，不会静默回退为直接终止进程。
 
-## Installation and Permissions
+## 安装与权限
 
-The application manifest is `asInvoker`. Installation targets the current user's LocalAppData and desktop. The project does not register a Windows service, modify firewall rules, create an administrator task, or request elevation.
+应用程序清单采用 `asInvoker`。安装位置为当前用户的 LocalAppData 和桌面。项目不会注册 Windows 服务、修改防火墙规则、创建管理员任务或请求提升权限。
 
-The npm package has no install lifecycle hook. Downloading it does not install or launch the Windows application; the user must explicitly invoke the CLI `install` command.
+npm 软件包不包含安装生命周期钩子。下载该软件包不会安装或启动 Windows 应用程序；用户必须明确调用 CLI 的 `install` 命令。
 
-Configuration and logs are outside the replaceable application directory. Upgrade and default uninstall preserve them; complete deletion requires `--purge-data` or `-PurgeData`.
+配置和日志存放在可替换的应用程序目录之外。升级和默认卸载都会保留它们；如需彻底删除，必须使用 `--purge-data` 或 `-PurgeData`。
 
-## Updates and Supply Chain
+## 更新与供应链
 
-Automatic update checks never install code. Every update requires an explicit confirmation. npm updates select an exact version, npx instances retain a pinned version, and source updates refuse a dirty Git checkout.
+自动更新检查绝不会安装代码。每次更新都必须得到明确确认。npm 更新会选择确切版本，npx 实例会保留固定版本；若 Git 检出目录不干净，源码更新将拒绝执行。
 
-After an update, a manager-owned smoke process runs on a random loopback port with an isolated DSH home. The update is accepted only after both fingerprints pass and authenticated graceful shutdown releases the port. Failure restores and re-tests the previous version. Source rollback uses the recorded commit only while the checkout remains clean; otherwise it preserves user changes and leaves a recovery journal instead of forcing a reset.
+更新后，由管理器管理的冒烟测试进程会使用隔离的 DSH 主目录，在随机回环端口上运行。只有两个指纹均通过检查，并且经过身份验证的优雅关闭已释放端口后，才会接受此次更新。如果失败，则恢复上一版本并重新测试。只有在检出目录仍然干净时，源码回滚才会使用已记录的提交；否则会保留用户更改并留下恢复日志，而不会强制重置。
 
-The npm package uses a files allowlist and a prepack validator. Windows CI performs a clean build, the complete test suite, tarball installation, and artifact generation. Release provenance should be enabled when npm publication is moved to GitHub Actions.
+npm 软件包采用文件允许列表和 `prepack` 验证器。Windows CI 会执行干净构建、完整测试套件、tarball 安装和制品生成。当 npm 发布迁移至 GitHub Actions 时，应启用发布来源证明（provenance）。
 
-Package publication is pinned to the official `https://registry.npmjs.org/` endpoint. End users may still choose a trusted download mirror through their own npm configuration.
+软件包发布固定使用官方 `https://registry.npmjs.org/` 端点。最终用户仍可通过自己的 npm 配置选择可信的下载镜像。
 
-The executable is currently unsigned. Windows SmartScreen or endpoint security products may warn about a downloaded build. A reproducible local build reduces ambiguity but does not replace a trusted code-signing certificate.
+可执行文件目前未签名。Windows SmartScreen 或端点安全产品可能会对下载的构建版本发出警告。可复现的本地构建可减少不确定性，但不能替代可信的代码签名证书。
 
-## Known Residual Risks
+## 已知残余风险
 
-- DSH is a developer-preview upstream dependency whose CLI, Web markers, or Cordis lifecycle API may change.
-- Reading process command lines and port ownership depends on Windows APIs and can fail under unusual permissions or endpoint security controls.
-- npm and Git availability depends on the user's network and configured registry or proxy.
-- A malicious actor able to replace files inside the user's installed application directory already has equivalent user-level access.
-- Product names and the upstream whale icon may be subject to their owner's trademark rights; the manager is not an official separate DeepSeek product.
+- DSH 是处于开发者预览阶段的上游依赖，其 CLI、Web 标记或 Cordis 生命周期 API 可能会发生变化。
+- 读取进程命令行和端口归属依赖 Windows API，在非标准权限或端点安全控制下可能失败。
+- npm 和 Git 的可用性取决于用户的网络，以及已配置的软件包注册源或代理。
+- 能够替换用户应用程序安装目录内文件的恶意行为者，已拥有等同的用户级访问权限。
+- 产品名称和上游鲸鱼图标可能受其所有者的商标权约束；本管理器并不是 DeepSeek 的独立官方产品。

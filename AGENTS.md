@@ -4,7 +4,7 @@ This file is the starting point for coding agents working on `dsh-windows-manage
 
 ## Read First
 
-1. Read `README.md` for user-facing behavior and installation instructions.
+1. Read `README.md` (Chinese) or `README.en.md` (English) for user-facing behavior and installation instructions.
 2. Read `docs/ARCHITECTURE.md` before changing lifecycle, plugins, ports, configuration, or packaging.
 3. Read `SECURITY.md` before changing process detection, termination, updates, networking, or named pipes.
 4. Read `CONTRIBUTING.md` before building, testing, or preparing a release.
@@ -14,6 +14,7 @@ This file is the starting point for coding agents working on `dsh-windows-manage
 ## Names
 
 - Product and desktop application: `DeepSeek Harness Manager`.
+- Default desktop shortcut: `DSH Manager`.
 - GitHub repository and npm package: `dsh-windows-manager`.
 - Managed upstream runtime: `@deepseek-ai/dsh`.
 
@@ -39,7 +40,7 @@ Do not describe the manager package as the DSH runtime. They are separate packag
 ## File Map
 
 - `src/Program.cs`: process entry point, single-instance mutex, external action signals.
-- `src/TrayApplication.cs`: tray UI, per-instance menus, language switching, periodic work.
+- `src/TrayApplication.cs`: tray UI, per-instance menus, marketplace link, language switching, periodic work.
 - `src/InstanceController.cs`: DSH discovery, start, stop, restart, and state transitions.
 - `src/PortProcess.cs`: port ownership, process identity, protection, and safe termination.
 - `src/GracefulShutdown.cs`: authenticated named-pipe shutdown client.
@@ -68,4 +69,4 @@ npm pack
 node .\tests\npm-package.test.mjs .\dsh-windows-manager-0.1.0.tgz
 ```
 
-Before a version change, update both `package.json` and `src/AssemblyInfo.cs`. Keep user-visible behavior synchronized across `README.md`, `docs/FEATURES.md`, `docs/ARCHITECTURE.md`, and `SECURITY.md` as applicable.
+Before a version change, update both `package.json` and `src/AssemblyInfo.cs`. Keep user-visible behavior synchronized across both README files, both security policies, both contribution guides, `docs/FEATURES.md`, and `docs/ARCHITECTURE.md` as applicable.
