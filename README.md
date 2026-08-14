@@ -300,11 +300,11 @@ powershell.exe -ExecutionPolicy Bypass -File .\scripts\Uninstall.ps1 -PurgeData
 
 `https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/web/public/favicon.svg`
 
-上游仓库采用 MIT License。PNG 和 ICO 由 `scripts\Build-Assets.ps1` 在本地生成。
+上游仓库许可证：MIT。PNG 和 ICO 由 `scripts\Build-Assets.ps1` 在本地生成。
 
 ## 开源协议
 
-本项目采用 [MIT License](LICENSE)。MIT 协议无需申请、审批或向任何机构登记；发布者保留版权声明和许可证文本即可。使用或分发项目的人也必须保留这两部分声明。
+[MIT](LICENSE)
 
 ## 暂未加入的可选功能
 
