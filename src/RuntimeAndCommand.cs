@@ -39,6 +39,7 @@ namespace DeepSeekHarnessManager
                     failures.Add(definition.Id + ": command not found");
                     continue;
                 }
+                context.CommandDirectory = Path.GetDirectoryName(command);
                 bool requirementsMet = true;
                 if (definition.RequiredPaths != null)
                 {

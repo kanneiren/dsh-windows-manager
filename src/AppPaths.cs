@@ -78,6 +78,7 @@ namespace DeepSeekHarnessManager
             if (context == null) return result;
             result = result.Replace("{appDir}", NullToEmpty(context.AppDirectory));
             result = result.Replace("{pluginDir}", NullToEmpty(context.PluginDirectory));
+            result = result.Replace("{commandDir}", NullToEmpty(context.CommandDirectory));
             result = result.Replace("{sourceRoot}", NullToEmpty(context.SourceRoot));
             result = result.Replace("{workspace}", NullToEmpty(context.Workspace));
             result = result.Replace("{profile}", NullToEmpty(context.Profile));

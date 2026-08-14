@@ -15,6 +15,7 @@ Supported tokens:
 
 - `{appDir}`
 - `{pluginDir}`
+- `{commandDir}`
 - `{sourceRoot}`
 - `{workspace}`
 - `{profile}`

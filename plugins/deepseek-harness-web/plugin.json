@@ -37,7 +37,7 @@
         "{port}"
       ],
       "WorkingDirectory": "{workspace}",
-      "VersionFile": "%APPDATA%\\npm\\node_modules\\@deepseek-ai\\dsh\\package.json"
+      "VersionFile": "{commandDir}\\node_modules\\@deepseek-ai\\dsh\\package.json"
     },
     {
       "Id": "source",

@@ -10,7 +10,7 @@ $assets = Join-Path $projectRoot 'assets'
 $csc = Join-Path $env:SystemRoot 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 if (-not (Test-Path -LiteralPath $csc -PathType Leaf)) { $csc = Join-Path $env:SystemRoot 'Microsoft.NET\Framework\v4.0.30319\csc.exe' }
 if (-not (Test-Path -LiteralPath $csc -PathType Leaf)) { throw '.NET Framework C# compiler was not found.' }
-if (-not (Test-Path -LiteralPath (Join-Path $assets 'deepseek-whale.ico'))) { & (Join-Path $PSScriptRoot 'Build-Assets.ps1') }
+if (-not (Test-Path -LiteralPath (Join-Path $assets 'deepseek-whale.ico'))) { throw 'The prebuilt application icon is missing.' }
 if (Test-Path -LiteralPath $dist) { Remove-Item -LiteralPath $dist -Recurse -Force }
 [System.IO.Directory]::CreateDirectory($dist) | Out-Null
 

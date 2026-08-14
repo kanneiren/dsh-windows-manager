@@ -29,7 +29,7 @@ Application files are installed under:
 
 This directory contains the EXE, `.exe.config`, assets, locales, plugin manifests, the Cordis bridge, license, and user documentation. It intentionally excludes source code, tests, and build tools.
 
-The EXE embeds the desktop shortcut icon. The runtime assets directory contains only five small tray-state ICO files; source PNG and SVG files remain in the repository for asset regeneration but are not published in the runtime payload.
+The EXE embeds the desktop shortcut icon. The runtime assets directory contains only five small tray-state ICO files; source PNG and SVG files remain in the repository as source references but are not published in the runtime payload.
 
 Mutable data is stored separately:
 

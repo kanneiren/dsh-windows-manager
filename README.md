@@ -29,6 +29,20 @@
 
 ## 安装
 
+### 交给 Agent 的安装与卸载提示词
+
+安装时，将下面这句话发给具有终端权限的编码 Agent：
+
+```text
+请为当前 Windows 用户安装最新版 DeepSeek Harness Manager：确认 Node.js 18+ 和 npm 可用后，执行 npx --yes dsh-windows-manager install；官方源失败时，可在记录原 registry 后临时切换至 https://registry.npmmirror.com。安装后运行 npx --yes dsh-windows-manager status，确认桌面快捷方式和 Web UI 可用。不要请求管理员权限、覆盖已有 config.json 或删除用户数据，最后报告安装结果和 registry 变更。
+```
+
+卸载时，将下面这句话发给 Agent：
+
+```text
+请卸载当前用户的 DeepSeek Harness Manager：执行 npx --yes dsh-windows-manager uninstall，删除应用和桌面快捷方式，保留配置、日志及正在运行的 DSH；若安装过全局 CLI，再执行 npm uninstall --global dsh-windows-manager。未经我明确确认，不要使用 --purge-data 或结束 DSH，最后报告删除项和保留项。
+```
+
 项目不提供额外的 MSI、NSIS 或 Setup 安装器。DSH 本身依赖 Node.js/npm，而管理器只需执行当前用户目录复制、首次配置和快捷方式创建；使用 npm CLI、Agent 或源码中的 `Install.cmd` 可以保持发布体积和维护面最小。
 
 从源码双击：
@@ -87,35 +101,6 @@ dsh-windows-manager uninstall --purge-data
 `start` 只启动 DSH，`open` 会启动并打开 Web UI。`uninstall` 默认保留配置和日志；`--purge-data` 才会完全清理。
 
 `3080` 只是新实例的默认端口，并非写死。新安装可通过 `--port 4000` 指定；已有安装不会因再次执行安装命令而覆盖配置，应在托盘菜单打开 `config.json`，修改实例的 `PreferredPort` 后退出并重新启动管理器。管理器会显式向 DSH 传递 `--port`，外部手动启动的 DSH 也只有在端口与实例配置一致时才会被安全接管。
-
-### 交给 Agent 的安装与卸载提示词
-
-安装时，将下面这句话发给具有终端权限的编码 Agent：
-
-```text
-请在这台 Windows 电脑上安装最新版 DeepSeek Harness Manager：先确认 Node.js 18+ 和 npm 可用，优先执行 npx --yes dsh-windows-manager install；若 npm 官方源连接失败，则记录 npm config get registry 的原值，切换到 https://registry.npmmirror.com 后重试；安装后执行 dsh-windows-manager status（若命令不是全局安装则用 npx --yes dsh-windows-manager status），确认 %LOCALAPPDATA%\DeepSeekHarnessManager\app\DeepSeekHarnessManager.exe、语言包、插件和桌面快捷方式均存在，再启动并验证 DSH Web UI 可访问；不要请求管理员权限，不要覆盖已有 config.json，也不要清理用户数据，最后报告安装路径、registry 是否被修改及各项验证结果。
-```
-
-卸载时，将下面这句话发给 Agent：
-
-```text
-请卸载这台 Windows 电脑上的 DeepSeek Harness Manager：执行 npx --yes dsh-windows-manager uninstall，确认 %LOCALAPPDATA%\DeepSeekHarnessManager\app 和桌面快捷方式已删除，但保留 config.json、日志和正在运行的 DSH；若检测到 dsh-windows-manager 是全局 npm 包，再执行 npm uninstall --global dsh-windows-manager 移除命令本身；除非我明确要求并再次确认，否则不要使用 --purge-data、不要删除 %LOCALAPPDATA%\DeepSeekHarnessManager 中的用户数据，也不要结束 DSH，最后报告删除项和保留项。
-```
-
-直接使用的卸载命令：
-
-```text
-npx --yes dsh-windows-manager uninstall
-npx --yes dsh-windows-manager uninstall --purge-data
-```
-
-第二条命令会永久删除配置、状态和日志，只应在用户明确要求完全清理时使用。若曾执行 `npm install --global dsh-windows-manager`，应用卸载后可再运行 `npm uninstall --global dsh-windows-manager` 删除全局 CLI。
-
-Agent 若切换了 registry，应明确告知用户。需要恢复原来的官方源时运行：
-
-```text
-npm config set registry https://registry.npmjs.org
-```
 
 ### 中国大陆网络
 
@@ -300,19 +285,8 @@ powershell.exe -ExecutionPolicy Bypass -File .\scripts\Uninstall.ps1 -PurgeData
 
 `https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/web/public/favicon.svg`
 
-上游仓库许可证：MIT。PNG 和 ICO 由 `scripts\Build-Assets.ps1` 在本地生成。
+上游仓库许可证：MIT。仓库和发布包直接提供已生成的图标，用户无需生成。
 
 ## 开源协议
 
 [MIT](LICENSE)
-
-## 暂未加入的可选功能
-
-- Windows 服务模式。
-- 登录 Windows 后自动启动。
-- 自动固定到任务栏。
-- 静默自动更新。
-- 自动结束未知端口进程。
-- 商业代码签名。
-
-这些功能被有意排除，以保持当前用户权限、显式操作和可审计行为。

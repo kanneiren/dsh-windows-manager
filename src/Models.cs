@@ -93,6 +93,7 @@ namespace DeepSeekHarnessManager
     {
         public string AppDirectory { get; set; }
         public string PluginDirectory { get; set; }
+        public string CommandDirectory { get; set; }
         public string SourceRoot { get; set; }
         public string Workspace { get; set; }
         public string Profile { get; set; }

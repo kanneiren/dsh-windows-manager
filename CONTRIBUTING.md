@@ -4,7 +4,6 @@
 
 - Windows 11 or a compatible Windows environment with .NET Framework 4.8.
 - Node.js 18 or newer and npm.
-- Chrome or Edge only when regenerating icon assets.
 - The DSH version declared by `plugins/deepseek-harness-web/plugin.json` for the real integration test.
 
 The application intentionally compiles with the .NET Framework C# 5 compiler. Do not introduce newer C# syntax without an explicit runtime and toolchain migration decision.
