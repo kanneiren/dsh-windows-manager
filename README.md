@@ -27,7 +27,7 @@
 - 支持 npm 全局安装、固定版本 npx 和 Git 源码检出。
 - 配置模型支持多个 profile/实例，默认只创建一个 Web 实例。
 
-## 安装
+## 安装与卸载
 
 ### 交给 Agent 的安装与卸载提示词
 
@@ -101,6 +101,16 @@ dsh-windows-manager uninstall --purge-data
 `start` 只启动 DSH，`open` 会启动并打开 Web UI。`uninstall` 默认保留配置和日志；`--purge-data` 才会完全清理。
 
 `3080` 只是新实例的默认端口，并非写死。新安装可通过 `--port 4000` 指定；已有安装不会因再次执行安装命令而覆盖配置，应在托盘菜单打开 `config.json`，修改实例的 `PreferredPort` 后退出并重新启动管理器。管理器会显式向 DSH 传递 `--port`，外部手动启动的 DSH 也只有在端口与实例配置一致时才会被安全接管。
+
+### 卸载
+
+双击 `Uninstall.cmd` 会移除程序和桌面快捷方式，默认保留配置与日志，也不会结束正在运行的 DSH。
+
+完全清理数据：
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\scripts\Uninstall.ps1 -PurgeData
+```
 
 ### 中国大陆网络
 
@@ -277,16 +287,6 @@ Test.cmd
 `.github/workflows/windows-ci.yml` 会在每次推送、Pull Request 和手动触发时申请一台临时 `windows-latest` GitHub 托管虚拟机。工作流安装固定测试版本的 DSH，执行 `scripts\Test.ps1`，检查 npm 发布包内容，并保留七天的 Windows 构建产物。
 
 它只影响 GitHub 上的自动验证，不会常驻用户电脑，也不会改变本地安装。公开仓库可直接使用 GitHub Actions；实际额度和并发限制以 GitHub 当前账户政策为准。
-
-## 卸载
-
-双击 `Uninstall.cmd` 会移除程序和桌面快捷方式，默认保留配置与日志，也不会结束正在运行的 DSH。
-
-完全清理数据：
-
-```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\scripts\Uninstall.ps1 -PurgeData
-```
 
 ## 图标来源
 
