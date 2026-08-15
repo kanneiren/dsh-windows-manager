@@ -4,11 +4,11 @@
 
 [![Windows CI](https://github.com/kanneiren/dsh-windows-manager/actions/workflows/windows-ci.yml/badge.svg?branch=main)](https://github.com/kanneiren/dsh-windows-manager/actions/workflows/windows-ci.yml)
 
-`DeepSeek Harness Manager` 是面向 Windows 11 的本地托盘控制器，用于启动、打开、停止、重启和更新 DeepSeek Harness（DSH），并显示端口、进程、版本和运行状态。
+`DeepSeek Harness Manager` 是面向 Windows 11 的原生托盘 Supervisor：在本机安装、启动、打开、停止、重启和更新 DeepSeek Harness（DSH），并显示端口、进程、版本和运行状态。
 
-DSH（npm 包 `@deepseek-ai/dsh`）是实际提供 Web UI 和 Agent 能力的程序；本项目负责在 Windows 上安装和控制 DSH，不包含或替代 DSH 本体。安装管理器后会创建名为 `DSH Manager` 的桌面快捷方式，双击即可启动或打开 DSH Web UI。本项目是独立的非官方第三方管理器，不隶属于 DeepSeek，也不代表其认可或背书。
+DSH（npm 包 `@deepseek-ai/dsh`）是实际提供 Web UI 与 Agent 能力的程序；本项目只负责在 Windows 上安装和控制 DSH，不包含也不替代 DSH 本体。安装后创建 `DSH Manager` 桌面快捷方式，双击即可启动或打开 DSH Web UI。本项目是独立的非官方第三方管理器，不隶属于 DeepSeek。
 
-管理器以当前用户权限运行，默认只让 DSH 监听 `127.0.0.1`，不注册 Windows 服务，也不自动结束未知进程。界面使用 .NET Framework 4.8 WinForms，不依赖 PowerShell 7、Electron 或第三方托盘框架。当前 `0.2.0` 构建的 EXE 约 136 kB，npm tarball 约 166 kB。
+架构上，原生托盘进程是进程外 Supervisor（.NET Framework 4.8 WinForms，EXE 约 136 kB，不依赖 PowerShell 7、Electron 或第三方托盘框架），负责启动、崩溃恢复、更新回滚、进程接管和托盘 UI；DSH 进程内部通过 Cordis Runtime Bridge 插件，经认证命名管道向 Manager 提供权威状态与生命周期事件，正常运行时零轮询（平均 CPU 0%）。Manager 以当前用户权限运行，只让 DSH 监听 `127.0.0.1`，不注册 Windows 服务，也不自动结束未知进程。
 
 ## 项目文档
 

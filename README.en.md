@@ -4,11 +4,11 @@
 
 [![Windows CI](https://github.com/kanneiren/dsh-windows-manager/actions/workflows/windows-ci.yml/badge.svg?branch=main)](https://github.com/kanneiren/dsh-windows-manager/actions/workflows/windows-ci.yml)
 
-`DeepSeek Harness Manager` is a local tray controller for Windows 11. It starts, opens, stops, restarts, and updates DeepSeek Harness (DSH), and displays its port, process, version, and runtime status.
+`DeepSeek Harness Manager` is a native tray Supervisor for Windows 11: it installs, starts, opens, stops, restarts, and updates DeepSeek Harness (DSH), and displays its port, process, version, and runtime status.
 
-DSH (the npm package `@deepseek-ai/dsh`) is the program that provides the Web UI and Agent capabilities. This project installs and controls DSH on Windows; it does not include or replace DSH itself. Installing the manager creates a desktop shortcut named `DSH Manager`. Double-click it to start DSH or open the DSH Web UI. This is an independent, unofficial third-party manager; it is not affiliated with or endorsed by DeepSeek.
+DSH (the npm package `@deepseek-ai/dsh`) is the program that provides the Web UI and Agent capabilities. This project only installs and controls DSH on Windows; it does not include or replace DSH itself. Installing the manager creates a desktop shortcut named `DSH Manager`. Double-click it to start DSH or open the DSH Web UI. This is an independent, unofficial third-party manager; it is not affiliated with or endorsed by DeepSeek.
 
-The manager runs with the current user's permissions and, by default, makes DSH listen only on `127.0.0.1`. It does not register a Windows service or automatically terminate unknown processes. The interface uses .NET Framework 4.8 WinForms and does not depend on PowerShell 7, Electron, or a third-party tray framework. The current `0.2.0` build has an EXE of about 136 kB and an npm tarball of about 166 kB.
+Architecturally, the native tray process is an out-of-process Supervisor (.NET Framework 4.8 WinForms, EXE about 136 kB, no dependency on PowerShell 7, Electron, or third-party tray frameworks) that owns startup, crash recovery, update rollback, process adoption, and the tray UI. Inside the DSH process, a Cordis Runtime Bridge plugin provides authoritative state and lifecycle events to the Manager over an authenticated named pipe, so normal operation polls nothing (average CPU 0%). The Manager runs with the current user's permissions, makes DSH listen only on `127.0.0.1`, and never registers a Windows service or terminates unknown processes automatically.
 
 ## Project Documentation
 

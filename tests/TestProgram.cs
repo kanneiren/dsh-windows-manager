@@ -36,6 +36,7 @@ namespace DeepSeekHarnessManager.Tests
                 Run("runtime resolution", TestRuntimeResolution);
                 Run("companion patch", TestCompanionPatch);
                 Run("bridge protocol", TestBridgeProtocol);
+                Run("log retention", TestLogRetention);
                 Run("npm update check", TestUpdateCheck);
                 Run("update rollback transaction", TestUpdateRollbackTransaction);
                 Run("existing DSH adoption", TestExistingHarnessAdoption);
@@ -323,6 +324,46 @@ namespace DeepSeekHarnessManager.Tests
             BridgeMessage legacy = BridgeProtocol.Deserialize("{\"ok\":false,\"error\":\"unauthorized\"}");
             Assert(!BridgeProtocol.IsVersioned(legacy), "legacy companion responses must be detected as unversioned");
             Assert(BridgeProtocol.ErrorCode(legacy) == "unauthorized", "legacy string error code was not parsed");
+        }
+
+        private static void TestLogRetention()
+        {
+            string logDirectory = AppPaths.LogDirectory;
+            Directory.CreateDirectory(logDirectory);
+
+            DateTime nowUtc = DateTime.UtcNow;
+            DateTime expiredUtc = nowUtc.AddDays(-(FileLog.InstanceLogRetentionDays + 1));
+            int i;
+            for (i = 0; i < 22; i++)
+            {
+                string stamp = nowUtc.AddMinutes(-i).ToString("yyyyMMdd-HHmmss");
+                string outLog = Path.Combine(logDirectory, "web-" + stamp + ".out.log");
+                string errLog = Path.Combine(logDirectory, "web-" + stamp + ".err.log");
+                File.WriteAllText(outLog, "dsh web: http://127.0.0.1:3080" + Environment.NewLine);
+                File.WriteAllText(errLog, "$ node --profile web" + Environment.NewLine);
+                File.SetLastWriteTimeUtc(outLog, nowUtc.AddMinutes(-i));
+                File.SetLastWriteTimeUtc(errLog, nowUtc.AddMinutes(-i));
+            }
+            string expiredOut = Path.Combine(logDirectory, "web-" + expiredUtc.ToString("yyyyMMdd-HHmmss") + ".out.log");
+            string expiredErr = Path.Combine(logDirectory, "web-" + expiredUtc.ToString("yyyyMMdd-HHmmss") + ".err.log");
+            File.WriteAllText(expiredOut, "old" + Environment.NewLine);
+            File.WriteAllText(expiredErr, "old" + Environment.NewLine);
+            File.SetLastWriteTimeUtc(expiredOut, expiredUtc);
+            File.SetLastWriteTimeUtc(expiredErr, expiredUtc);
+
+            byte[] filler = new byte[4096];
+            using (FileStream stream = File.Create(AppPaths.ManagerLog))
+            {
+                for (long written = 0; written < FileLog.ManagerLogRolloverBytes + 4096; written += filler.Length)
+                    stream.Write(filler, 0, filler.Length);
+            }
+
+            FileLog.EnforceRetention();
+
+            Assert(File.Exists(AppPaths.ManagerLog + ".1"), "manager.log was not rolled over");
+            Assert(!File.Exists(expiredOut) && !File.Exists(expiredErr), "expired instance logs were not removed");
+            string[] remaining = Directory.GetFiles(logDirectory, "web-*.log");
+            Assert(remaining.Length <= FileLog.MaxInstanceLogPairs * 2, "instance log count exceeded the retention bound");
         }
 
         private static void TestUpdateCheck()

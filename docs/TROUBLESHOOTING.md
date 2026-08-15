@@ -70,6 +70,8 @@ Use `Open logs` from the tray menu. Manager-launched instances create timestampe
 
 The manager itself writes `manager.log`. Common causes include an unavailable runtime command, npm registry failure, invalid source checkout, workspace access failure, port binding failure, a DSH startup exception, or an upstream CLI/API change.
 
+Log retention is bounded automatically at every manager startup: `manager.log` rolls over at 1 MB into `manager.log.1` (one archive kept), and instance `.out`/`.err` pairs older than 14 days or beyond the newest 20 pairs are deleted. A rolled-over `manager.log.1` does not appear in the current log tail, but remains in the same folder for comparison.
+
 An externally launched DSH process has its own output destination, so the manager may not have its startup logs.
 
 ## 6. Check the Runtime

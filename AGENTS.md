@@ -68,7 +68,7 @@ Validate the exact npm payload and install it from the generated tarball:
 
 ```powershell
 npm pack
-node .\tests\npm-package.test.mjs .\dsh-windows-manager-0.2.0.tgz
+node .\tests\npm-package.test.mjs .\dsh-windows-manager-0.2.1.tgz
 ```
 
 Before a version change, update both `package.json` and `src/AssemblyInfo.cs`. Keep user-visible behavior synchronized across both README files, both security policies, both contribution guides, `docs/FEATURES.md`, and `docs/ARCHITECTURE.md` as applicable.

@@ -62,6 +62,7 @@ namespace DeepSeekHarnessManager
         {
             string action = ParseAction(args);
             AppPaths.EnsureDirectories();
+            FileLog.EnforceRetention();
             Localization.Initialize("auto");
             FileLog.Info("Manager invocation, action=" + action);
             Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);

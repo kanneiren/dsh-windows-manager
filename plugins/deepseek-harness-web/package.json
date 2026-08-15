@@ -1,6 +1,6 @@
 {
   "name": "dsh-windows-manager-plugin",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "description": "DSH Runtime Bridge plugin for dsh-windows-manager. Ships the authenticated named-pipe protocol; install as a DSH bundle or load through the Manager-generated per-launch patch.",
