@@ -8,7 +8,7 @@
 
 DSH (the npm package `@deepseek-ai/dsh`) is the program that provides the Web UI and Agent capabilities. This project installs and controls DSH on Windows; it does not include or replace DSH itself. Installing the manager creates a desktop shortcut named `DSH Manager`. Double-click it to start DSH or open the DSH Web UI. This is an independent, unofficial third-party manager; it is not affiliated with or endorsed by DeepSeek.
 
-The manager runs with the current user's permissions and, by default, makes DSH listen only on `127.0.0.1`. It does not register a Windows service or automatically terminate unknown processes. The interface uses .NET Framework 4.8 WinForms and does not depend on PowerShell 7, Electron, or a third-party tray framework. The current `0.2.0` build has an EXE of about 115 kB and an npm tarball of about 150 kB.
+The manager runs with the current user's permissions and, by default, makes DSH listen only on `127.0.0.1`. It does not register a Windows service or automatically terminate unknown processes. The interface uses .NET Framework 4.8 WinForms and does not depend on PowerShell 7, Electron, or a third-party tray framework. The current `0.2.0` build has an EXE of about 136 kB and an npm tarball of about 166 kB.
 
 ## Project Documentation
 
@@ -230,7 +230,7 @@ With multiple instances, each instance has its own submenu.
 
 The manager responds to external command signals once per second. Manager-launched instances with the DSH IPC bridge connected no longer run periodic WMI, process-enumeration, port, or HTTP polling: process liveness comes from the Windows process-handle exit event, and runtime state comes from authenticated named-pipe events. Fallback discovery remains for external adoption, unavailable plugins, protocol mismatch, startup, and diagnostics.
 
-On the current test machine with 32 logical processors, the median during stable operation fell from about `118.61 MB` of working set, `70.38 MB` of private memory, `1068` handles, and `19` threads to about `65.66 MB`, `30.16 MB`, `521`, and `16`, respectively. After optimization, average whole-system CPU usage over 60 seconds was about `0.004%`. These are the 0.1.0 baseline numbers; re-run `Measure-Performance.ps1` for the event-driven 0.2.0 candidate as described in the [performance documentation](docs/PERFORMANCE.md). The process did not allocate a GPU context, and an additional 30-second stable sample showed no disk reads or writes.
+On the current test machine with 32 logical processors, stable 0.2.0 operation (bridge connected, 60-second sampling after settling) showed medians of about `109.81 MB` of working set, `62.65 MB` of private memory, `846` handles, and `20` threads, with a 60-second average CPU of `0.000%` on the one-core equivalent. The 0.1.0 control on the same machine measured `59.07 MB`, `31.72 MB`, `473` handles, `12` threads, and `0.103%` CPU. The event-driven refactor trades modest memory and handle growth for zero steady-state CPU: the persistent authenticated pipe, its reader task, and a woken CLR server GC account for the resource difference. Values are stable across repeated samples with no leak trend; the managed heap stays near 7 MB. Memory is not the primary optimization target for this project. Reproduce with [the performance documentation](docs/PERFORMANCE.md). The process did not allocate a GPU context.
 
 ## Graceful Shutdown
 
