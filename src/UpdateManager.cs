@@ -73,7 +73,7 @@ namespace DeepSeekHarnessManager
                 Localization.Format("Update.Confirm", controller.Config.Name, info.InstalledVersion, info.LatestVersion),
                 Localization.Text("Update.ConfirmTitle"), MessageBoxButtons.YesNo, MessageBoxIcon.Question);
             if (confirmation != DialogResult.Yes) return false;
-            bool wasRunning = controller.State == InstanceStateKind.Running || controller.State == InstanceStateKind.Starting;
+            bool wasRunning = controller.State == InstanceStateKind.Running || controller.State == InstanceStateKind.Starting || controller.State == InstanceStateKind.Stopping;
             int restartPort = controller.ActivePort > 0 ? controller.ActivePort : controller.Config.PreferredPort;
             if (wasRunning && !controller.Stop(owner, false)) return false;
 

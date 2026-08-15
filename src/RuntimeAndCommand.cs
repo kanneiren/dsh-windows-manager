@@ -153,15 +153,16 @@ namespace DeepSeekHarnessManager
             Process process = new Process();
             process.StartInfo = info;
             process.EnableRaisingEvents = true;
+            ManagedProcess managed = new ManagedProcess();
+            managed.RootProcess = process;
+            managed.OutputLog = outputLog;
+            managed.ErrorLog = errorLog;
+            process.Exited += delegate(object sender, EventArgs args) { managed.SignalExit(); };
             process.OutputDataReceived += delegate(object sender, DataReceivedEventArgs args) { AppendLine(outputLog, args.Data); };
             process.ErrorDataReceived += delegate(object sender, DataReceivedEventArgs args) { AppendLine(errorLog, args.Data); };
             if (!process.Start()) throw new InvalidOperationException("The runtime process did not start.");
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
-            ManagedProcess managed = new ManagedProcess();
-            managed.RootProcess = process;
-            managed.OutputLog = outputLog;
-            managed.ErrorLog = errorLog;
             return managed;
         }
 

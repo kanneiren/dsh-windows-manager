@@ -5,6 +5,8 @@ using System.IO;
 using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace DeepSeekHarnessManager
@@ -13,16 +15,31 @@ namespace DeepSeekHarnessManager
     {
         private readonly ConfigurationStore configurationStore;
         private readonly List<Regex> processPatterns;
+        private readonly object bridgeSync = new object();
+        private readonly Queue<BridgeMessage> bridgeMessages = new Queue<BridgeMessage>();
         private PersistedInstanceState persistedState;
-        private ManagedProcess launchProcess;
-        private CompanionLaunch companion;
+        private volatile ManagedProcess launchProcess;
+        private volatile CompanionLaunch companion;
         private DateTime startDeadlineUtc;
         private bool openWhenReady;
         private int startingPort;
         private int savedPort;
         private int savedProcessId;
         private DateTime nextInspectionUtc;
+        private DateTime nextBridgeConnectUtc = DateTime.MinValue;
         private ProcessIdentity cachedProcessIdentity;
+        private volatile IpcBridgeConnection bridge;
+        private volatile BridgeRuntimeInfo bridgeStatus;
+        private Task bridgeConnectTask;
+        private ProcessIdentity launchIdentity;
+        private volatile int bridgeConnectAttempts;
+        private volatile int lifecycleGeneration;
+        private volatile string bridgeError = String.Empty;
+        private volatile bool bridgeProtocolIncompatible;
+        private volatile bool managedProcessExited;
+        private bool managedProcessExitHandled;
+        private bool processExitJustHandled;
+        private bool stopExpected;
 
         public InstanceController(InstanceConfig config, PluginDefinition plugin, ConfigurationStore store)
         {
@@ -61,43 +78,110 @@ namespace DeepSeekHarnessManager
         public int ActivePort { get; private set; }
         public PortInspection LastInspection { get; private set; }
         public RuntimeResolution ActiveRuntime { get; private set; }
+        public BridgeRuntimeInfo BridgeRuntime { get { return bridgeStatus; } }
+        public bool IpcBridgeConnected { get { return bridge != null && bridge.IsConnected; } }
+        public string IpcBridgeError { get { return bridgeError ?? String.Empty; } }
         public event EventHandler Changed;
 
         public void Tick()
         {
+            DrainBridgeMessages();
+            if (processExitJustHandled)
+            {
+                processExitJustHandled = false;
+                return;
+            }
             if (State == InstanceStateKind.Updating) return;
+
+            if (State == InstanceStateKind.Stopping)
+            {
+                if (launchProcess != null)
+                {
+                    if (IsLaunchProcessExited()) FinishStop();
+                    return;
+                }
+            }
+
             if (State == InstanceStateKind.Starting && startingPort > 0)
             {
-                PortInspection inspection = InspectPort(startingPort);
-                LastInspection = inspection;
-                if (inspection.Kind == InstanceStateKind.Running)
-                {
-                    CompleteStart(inspection);
-                    return;
-                }
-                if (inspection.Kind == InstanceStateKind.Conflict)
-                {
-                    FailStart("Port " + startingPort + " was taken by another process during startup.");
-                    return;
-                }
-                bool exited = false;
-                if (launchProcess != null && launchProcess.RootProcess != null)
-                {
-                    try { exited = launchProcess.RootProcess.HasExited; } catch { exited = true; }
-                }
+                if (TryCompleteStartFromBridge()) return;
+
+                bool exited = IsLaunchProcessExited();
                 if (exited || DateTime.UtcNow > startDeadlineUtc)
                 {
                     string detail = ReadErrorTail();
                     FailStart("DeepSeek Harness did not become ready." + (detail.Length == 0 ? String.Empty : " " + detail));
                     return;
                 }
+
+                if (!IpcBridgeConnected)
+                {
+                    EnsureBridgeConnection();
+                    DateTime now = DateTime.UtcNow;
+                    if (now < nextInspectionUtc)
+                    {
+                        SetState(InstanceStateKind.Starting, "Starting on port " + startingPort);
+                        return;
+                    }
+                    nextInspectionUtc = now.AddMilliseconds(InspectionIntervalMilliseconds(State));
+
+                    PortInspection inspection = InspectPort(startingPort);
+                    LastInspection = inspection;
+                    if (inspection.Kind == InstanceStateKind.Running)
+                    {
+                        CompleteStart(inspection);
+                        return;
+                    }
+                    if (inspection.Kind == InstanceStateKind.Conflict)
+                    {
+                        FailStart("Port " + startingPort + " was taken by another process during startup.");
+                        return;
+                    }
+                }
                 SetState(InstanceStateKind.Starting, "Starting on port " + startingPort);
                 return;
             }
 
-            DateTime now = DateTime.UtcNow;
-            if (now < nextInspectionUtc) return;
-            nextInspectionUtc = now.AddMilliseconds(InspectionIntervalMilliseconds(State));
+            if (State == InstanceStateKind.Running && IpcBridgeConnected)
+            {
+                EnsureBridgeConnection();
+                return;
+            }
+
+            if (State == InstanceStateKind.Running && launchProcess != null)
+            {
+                // Manager-owned process: the Process.Exited event is the
+                // authoritative liveness signal. Reconnect IPC in the
+                // background; while it is unavailable, run only the bounded
+                // fallback discovery cadence instead of a tight poll.
+                EnsureBridgeConnection();
+                if (IpcBridgeConnected) return;
+                DateTime managerOwnedNow = DateTime.UtcNow;
+                if (managerOwnedNow < nextInspectionUtc) return;
+                nextInspectionUtc = managerOwnedNow.AddMilliseconds(InspectionIntervalMilliseconds(State));
+                PortInspection fallback = FindCurrentInspection();
+                LastInspection = fallback;
+                if (fallback.Kind == InstanceStateKind.Running)
+                {
+                    ActivePort = fallback.Port;
+                    SaveRunningState(fallback);
+                }
+                else if (fallback.Kind == InstanceStateKind.Conflict)
+                {
+                    ActivePort = 0;
+                    SetState(InstanceStateKind.Conflict, "Port " + fallback.Port + " is occupied by " + SafeProcessName(fallback.Process));
+                }
+                return;
+            }
+
+            if (State == InstanceStateKind.Running && companion != null && !bridgeProtocolIncompatible)
+            {
+                EnsureBridgeConnection();
+            }
+
+            DateTime stableNow = DateTime.UtcNow;
+            if (stableNow < nextInspectionUtc) return;
+            nextInspectionUtc = stableNow.AddMilliseconds(InspectionIntervalMilliseconds(State));
 
             PortInspection current = FindCurrentInspection();
             LastInspection = current;
@@ -106,6 +190,7 @@ namespace DeepSeekHarnessManager
                 ActivePort = current.Port;
                 SaveRunningState(current);
                 SetState(InstanceStateKind.Running, "Running on port " + current.Port);
+                if (companion != null && !bridgeProtocolIncompatible) EnsureBridgeConnection();
             }
             else if (current.Kind == InstanceStateKind.Starting)
             {
@@ -223,7 +308,7 @@ namespace DeepSeekHarnessManager
 
         public void Start(int port, bool openAfterStart, IWin32Window owner)
         {
-            if (State == InstanceStateKind.Starting) return;
+            if (State == InstanceStateKind.Starting || State == InstanceStateKind.Stopping || State == InstanceStateKind.Updating) return;
             PortInspection inspection = InspectPort(port);
             if (inspection.Kind != InstanceStateKind.Stopped)
             {
@@ -250,12 +335,24 @@ namespace DeepSeekHarnessManager
                 string errorLog = Path.Combine(AppPaths.LogDirectory, Config.Id + "-" + timestamp + ".err.log");
                 FileLog.Info("Starting " + Config.Id + " with " + runtime.Description + " on port " + port);
                 launchProcess = CommandRunner.StartService(runtime, outputLog, errorLog);
+                launchProcess.Exited += OnManagedProcessExited;
+                if (launchProcess.ExitObserved) managedProcessExited = true;
+                launchIdentity = ProcessInspector.Get(launchProcess.RootProcess.Id, false);
+                cachedProcessIdentity = launchIdentity;
                 ActiveRuntime = runtime;
                 InstalledVersion = runtime.Version;
                 startingPort = port;
                 ActivePort = port;
                 startDeadlineUtc = DateTime.UtcNow.AddSeconds(90);
                 openWhenReady = openAfterStart;
+                stopExpected = false;
+                managedProcessExitHandled = false;
+                bridgeProtocolIncompatible = false;
+                bridgeError = String.Empty;
+                bridgeStatus = null;
+                bridgeConnectAttempts = 0;
+                lifecycleGeneration++;
+                nextBridgeConnectUtc = DateTime.UtcNow;
                 persistedState = new PersistedInstanceState();
                 persistedState.Port = port;
                 persistedState.ProcessId = launchProcess.RootProcess.Id;
@@ -268,6 +365,7 @@ namespace DeepSeekHarnessManager
                 persistedState.UpdatedAt = DateTime.UtcNow.ToString("o");
                 configurationStore.SaveState(Config.Id, persistedState);
                 SetState(InstanceStateKind.Starting, "Starting on port " + port);
+                EnsureBridgeConnection();
             }
             catch (Exception exception)
             {
@@ -339,7 +437,7 @@ namespace DeepSeekHarnessManager
             PortInspection inspection = FindCurrentInspection();
             StringBuilder text = new StringBuilder();
             text.AppendLine(Localization.Text("Details.Instance") + ": " + Config.Name + " (" + Config.Id + ")");
-            text.AppendLine(Localization.Text("Details.State") + ": " + inspection.Kind);
+            text.AppendLine(Localization.Text("Details.State") + ": " + State);
             text.AppendLine(Localization.Text("Details.Profile") + ": " + Config.Profile);
             text.AppendLine(Localization.Text("Details.Runtime") + ": " + Config.Runtime);
             text.AppendLine(Localization.Text("Details.Version") + ": " + (String.IsNullOrWhiteSpace(InstalledVersion) ? Localization.Text("Version.Unknown") : InstalledVersion));
@@ -356,6 +454,15 @@ namespace DeepSeekHarnessManager
             }
             text.AppendLine(Localization.Text("Details.HttpFingerprint") + ": " + inspection.HttpVerified);
             text.AppendLine(Localization.Text("Details.ProcessFingerprint") + ": " + inspection.ProcessVerified);
+            text.AppendLine(Localization.Text("Details.BridgeFingerprint") + ": " + inspection.BridgeVerified);
+            text.AppendLine(Localization.Text("Details.IpcBridge") + ": " + (IpcBridgeConnected ? Localization.Text("Details.IpcBridgeConnected") : Localization.Text("Details.IpcBridgeDisconnected")));
+            if (bridgeStatus != null)
+            {
+                text.AppendLine(Localization.Text("Details.IpcState") + ": " + (bridgeStatus.State ?? String.Empty));
+                if (!String.IsNullOrWhiteSpace(bridgeStatus.DshVersion)) text.AppendLine(Localization.Text("Details.IpcDshVersion") + ": " + bridgeStatus.DshVersion);
+                if (!String.IsNullOrWhiteSpace(bridgeStatus.DshHome)) text.AppendLine(Localization.Text("Details.IpcDshHome") + ": " + bridgeStatus.DshHome);
+            }
+            if (!String.IsNullOrWhiteSpace(bridgeError)) text.AppendLine(Localization.Text("Details.IpcError") + ": " + bridgeError);
             text.AppendLine(Localization.Text("Details.Workspace") + ": " + Config.Workspace);
             if (!String.IsNullOrWhiteSpace(Config.DshHome)) text.AppendLine("DSH_HOME: " + Config.DshHome);
             if (!String.IsNullOrWhiteSpace(Config.SourceRoot)) text.AppendLine(Localization.Text("Details.Source") + ": " + Config.SourceRoot);
@@ -380,8 +487,19 @@ namespace DeepSeekHarnessManager
             SetState(updating ? InstanceStateKind.Updating : InstanceStateKind.Stopped, text);
         }
 
+        public void Close()
+        {
+            CloseBridge();
+        }
+
         private PortInspection FindCurrentInspection()
         {
+            if (IpcBridgeConnected && bridgeStatus != null && bridgeStatus.IsReady)
+            {
+                PortInspection bridgeInspection = BuildInspectionFromBridge(bridgeStatus);
+                if (bridgeInspection != null && bridgeInspection.Kind == InstanceStateKind.Running) return bridgeInspection;
+            }
+
             List<int> ports = new List<int>();
             if (ActivePort > 0) ports.Add(ActivePort);
             if (persistedState != null && persistedState.Port > 0 && !ports.Contains(persistedState.Port)) ports.Add(persistedState.Port);
@@ -427,6 +545,9 @@ namespace DeepSeekHarnessManager
             ActivePort = inspection.Port;
             startingPort = 0;
             LastError = String.Empty;
+            managedProcessExitHandled = false;
+            managedProcessExited = false;
+            processExitJustHandled = false;
             SaveRunningState(inspection);
             SetState(InstanceStateKind.Running, "Running on port " + inspection.Port);
             FileLog.Info(Config.Id + " is ready on port " + inspection.Port + " PID " + inspection.ProcessId);
@@ -461,6 +582,14 @@ namespace DeepSeekHarnessManager
                 }
             }
             catch { }
+            CloseBridge();
+            bridgeStatus = null;
+            bridgeError = String.Empty;
+            stopExpected = false;
+            managedProcessExitHandled = true;
+            managedProcessExited = false;
+            processExitJustHandled = false;
+            launchIdentity = null;
             DisposeLaunchProcess();
             SetState(InstanceStateKind.Error, error);
             FileLog.Error(Config.Id + ": " + error);
@@ -473,10 +602,20 @@ namespace DeepSeekHarnessManager
             startingPort = 0;
             openWhenReady = false;
             string patchPath = companion == null ? null : companion.PatchPath;
+            CloseBridge();
+            bridgeStatus = null;
+            bridgeError = String.Empty;
+            lifecycleGeneration++;
             persistedState = null;
             companion = null;
             savedPort = 0;
             savedProcessId = 0;
+            stopExpected = false;
+            managedProcessExitHandled = true;
+            managedProcessExited = false;
+            processExitJustHandled = false;
+            bridgeConnectAttempts = 0;
+            launchIdentity = null;
             configurationStore.DeleteState(Config.Id);
             try { if (!String.IsNullOrWhiteSpace(patchPath) && File.Exists(patchPath)) File.Delete(patchPath); } catch { }
             DisposeLaunchProcess();
@@ -486,18 +625,25 @@ namespace DeepSeekHarnessManager
         private void DisposeLaunchProcess()
         {
             if (launchProcess == null) return;
+            try { launchProcess.Exited -= OnManagedProcessExited; } catch { }
             try { if (launchProcess.RootProcess != null) launchProcess.RootProcess.Dispose(); } catch { }
             launchProcess = null;
         }
 
         private bool TryGracefulStop(PortInspection inspection, out string error)
         {
+            stopExpected = true;
             bool requested = GracefulShutdownClient.Request(
                 companion == null ? null : companion.PipeName,
                 companion == null ? null : companion.Token,
                 1500,
                 out error);
-            if (!requested) return false;
+            if (!requested)
+            {
+                stopExpected = false;
+                return false;
+            }
+            SetState(InstanceStateKind.Stopping, "Stopping on port " + inspection.Port);
             FileLog.Info("Graceful shutdown requested for " + Config.Id + " PID " + inspection.ProcessId);
             try
             {
@@ -541,6 +687,393 @@ namespace DeepSeekHarnessManager
             savedPort = inspection.Port;
             savedProcessId = inspection.ProcessId;
         }
+
+        public void DrainBridgeMessages()
+        {
+            List<BridgeMessage> messages = null;
+            lock (bridgeSync)
+            {
+                if (bridgeMessages.Count > 0)
+                {
+                    messages = new List<BridgeMessage>();
+                    while (bridgeMessages.Count > 0) messages.Add(bridgeMessages.Dequeue());
+                }
+            }
+            if (messages != null)
+            {
+                foreach (BridgeMessage message in messages) ApplyBridgeMessage(message);
+            }
+
+            if (managedProcessExited && !managedProcessExitHandled)
+            {
+                managedProcessExitHandled = true;
+                processExitJustHandled = true;
+                HandleManagedProcessExit();
+            }
+        }
+
+        private void QueueBridgeMessage(BridgeMessage message)
+        {
+            if (message == null) return;
+            lock (bridgeSync) bridgeMessages.Enqueue(message);
+            RaiseChanged();
+        }
+
+        private void ApplyBridgeMessage(BridgeMessage message)
+        {
+            if (message == null) return;
+            if (String.Equals(message.MessageType, "response", StringComparison.OrdinalIgnoreCase))
+            {
+                BridgeRuntimeInfo info = BridgeProtocol.ParseRuntimeInfo(message);
+                if (info != null) ApplyBridgeRuntimeInfo(info);
+                return;
+            }
+            BridgeRuntimeInfo eventInfo = BridgeProtocol.ParseRuntimeInfo(message);
+            if (eventInfo != null) ApplyBridgeRuntimeInfo(eventInfo);
+        }
+
+        private void ApplyBridgeRuntimeInfo(BridgeRuntimeInfo info)
+        {
+            if (info == null) return;
+            bridgeStatus = info;
+            if (!String.IsNullOrWhiteSpace(info.DshVersion)) InstalledVersion = info.DshVersion;
+
+            if (info.IsReady)
+            {
+                TryCompleteStartFromBridge();
+            }
+            else if (info.IsStopping && State == InstanceStateKind.Running)
+            {
+                SetState(InstanceStateKind.Stopping, "DSH is stopping on port " + (ActivePort > 0 ? ActivePort : info.Port));
+            }
+        }
+
+        private bool TryCompleteStartFromBridge()
+        {
+            BridgeRuntimeInfo info = bridgeStatus;
+            if (info == null || !info.IsReady) return false;
+
+            PortInspection inspection = BuildInspectionFromBridge(info);
+            if (inspection == null)
+            {
+                FileLog.Warn("DSH IPC bridge reported ready, but process/port revalidation failed for " + Config.Id + ".");
+                if (State == InstanceStateKind.Starting)
+                {
+                    bridgeError = "The IPC bridge reported ready, but process/port revalidation failed.";
+                    CloseBridge();
+                    nextBridgeConnectUtc = DateTime.UtcNow.AddSeconds(5);
+                    nextInspectionUtc = DateTime.MinValue;
+                }
+                return false;
+            }
+
+            LastInspection = inspection;
+            if (State == InstanceStateKind.Starting)
+            {
+                if (startingPort > 0 && inspection.Port != startingPort) return false;
+                CompleteStart(inspection);
+                return true;
+            }
+            if (State == InstanceStateKind.Running)
+            {
+                ActivePort = inspection.Port;
+                SaveRunningState(inspection);
+                SetState(InstanceStateKind.Running, "Running on port " + inspection.Port);
+                return true;
+            }
+            if (State == InstanceStateKind.Stopped || State == InstanceStateKind.Conflict || State == InstanceStateKind.Error)
+            {
+                ActivePort = inspection.Port;
+                SaveRunningState(inspection);
+                SetState(InstanceStateKind.Running, "Running on port " + inspection.Port);
+                return true;
+            }
+            return false;
+        }
+
+        private PortInspection BuildInspectionFromBridge(BridgeRuntimeInfo info)
+        {
+            if (info == null || info.Pid <= 0 || info.Port <= 0 || info.Port > 65535) return null;
+            if (PortMap.GetPreferredListenerProcessId(info.Port) != info.Pid)
+            {
+                FileLog.Warn("DSH IPC bridge PID/port mismatch for " + Config.Id + ": pid=" + info.Pid + " port=" + info.Port);
+                return null;
+            }
+
+            ProcessIdentity basic = ProcessInspector.GetBasic(info.Pid);
+            ProcessIdentity process = null;
+            if (cachedProcessIdentity != null && !String.IsNullOrWhiteSpace(cachedProcessIdentity.CommandLine) &&
+                ProcessInspector.IsSame(cachedProcessIdentity, basic))
+            {
+                process = cachedProcessIdentity;
+            }
+            else if (launchIdentity != null && ProcessInspector.IsSame(launchIdentity, basic))
+            {
+                process = ProcessInspector.Get(info.Pid, false);
+                cachedProcessIdentity = process;
+            }
+            else
+            {
+                process = ProcessInspector.Get(info.Pid, false);
+                cachedProcessIdentity = process;
+            }
+
+            bool processVerified = MatchesProcessPatterns(process.CommandLine);
+            if (!processVerified && launchIdentity != null && ProcessInspector.IsSame(launchIdentity, process))
+                processVerified = !String.IsNullOrWhiteSpace(launchIdentity.CommandLine) && MatchesProcessPatterns(launchIdentity.CommandLine);
+
+            PortInspection inspection = new PortInspection();
+            inspection.Kind = InstanceStateKind.Running;
+            inspection.Port = info.Port;
+            inspection.ProcessId = info.Pid;
+            inspection.Process = process;
+            inspection.ProcessVerified = processVerified;
+            inspection.HttpVerified = false;
+            inspection.BridgeVerified = true;
+            inspection.Detail = "Authoritative DSH IPC bridge";
+            return inspection;
+        }
+
+        private bool MatchesProcessPatterns(string commandLine)
+        {
+            if (String.IsNullOrWhiteSpace(commandLine)) return false;
+            foreach (Regex pattern in processPatterns)
+                if (pattern.IsMatch(commandLine)) return true;
+            return false;
+        }
+
+        private void EnsureBridgeConnection()
+        {
+            if (bridgeProtocolIncompatible || companion == null) return;
+            if (String.IsNullOrWhiteSpace(companion.PipeName) || String.IsNullOrWhiteSpace(companion.Token)) return;
+            if (bridge != null)
+            {
+                if (bridge.IsConnected) return;
+                CloseBridge();
+            }
+            if (bridgeConnectTask != null && !bridgeConnectTask.IsCompleted) return;
+            if (DateTime.UtcNow < nextBridgeConnectUtc) return;
+
+            bridgeConnectTask = Task.Factory.StartNew(BridgeConnectWorker, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        }
+
+        private void BridgeConnectWorker()
+        {
+            CompanionLaunch launch = companion;
+            int generation = lifecycleGeneration;
+            if (launch == null || generation != lifecycleGeneration) return;
+
+            string error;
+            IpcBridgeConnection connection = IpcBridgeConnection.Connect(launch.PipeName, launch.Token, 2500, out error);
+            if (connection == null)
+            {
+                if (generation == lifecycleGeneration)
+                {
+                    bridgeError = error;
+                    bridgeConnectAttempts++;
+                    nextBridgeConnectUtc = DateTime.UtcNow.AddMilliseconds(BridgeRetryMilliseconds());
+                    RaiseChanged();
+                }
+                return;
+            }
+            if (generation != lifecycleGeneration)
+            {
+                connection.Close();
+                return;
+            }
+            if (!connection.IsConnected)
+            {
+                connection.Close();
+                if (generation == lifecycleGeneration)
+                {
+                    bridgeError = "The DSH IPC bridge disconnected before authentication completed.";
+                    bridgeConnectAttempts++;
+                    nextBridgeConnectUtc = DateTime.UtcNow.AddMilliseconds(BridgeRetryMilliseconds());
+                    RaiseChanged();
+                }
+                return;
+            }
+
+            connection.EventReceived += OnBridgeEvent;
+            connection.Disconnected += OnBridgeDisconnected;
+            bridge = connection;
+            if (generation != lifecycleGeneration)
+            {
+                CloseBridge();
+                return;
+            }
+            bridgeConnectAttempts = 0;
+            bridgeError = String.Empty;
+
+            BridgeMessage ping = connection.Request("ping", null, 1500);
+            if (!IsBridgeAccepted(ping))
+            {
+                RejectBridgeConnection(connection, ping);
+                return;
+            }
+
+            BridgeMessage status = connection.Request("getStatus", null, 1500);
+            if (!IsBridgeAccepted(status))
+            {
+                RejectBridgeConnection(connection, status);
+                return;
+            }
+            QueueBridgeMessage(status);
+
+            BridgeMessage runtime = connection.Request("getRuntimeInfo", null, 1500);
+            if (!IsBridgeAccepted(runtime))
+            {
+                RejectBridgeConnection(connection, runtime);
+                return;
+            }
+            QueueBridgeMessage(runtime);
+            RaiseChanged();
+        }
+
+        private bool IsBridgeAccepted(BridgeMessage response)
+        {
+            return response != null && response.Ok;
+        }
+
+        private void RejectBridgeConnection(IpcBridgeConnection connection, BridgeMessage response)
+        {
+            if (connection == null) return;
+            connection.EventReceived -= OnBridgeEvent;
+            connection.Disconnected -= OnBridgeDisconnected;
+            if (ReferenceEquals(bridge, connection)) bridge = null;
+            connection.Close();
+
+            if (response != null && String.Equals(BridgeProtocol.ErrorCode(response), "protocol-version-unsupported", StringComparison.OrdinalIgnoreCase))
+            {
+                bridgeProtocolIncompatible = true;
+                bridgeError = BridgeProtocol.DescribeError(response);
+                FileLog.Warn("DSH IPC bridge is protocol-incompatible for " + Config.Id + ": " + bridgeError);
+                RaiseChanged();
+                return;
+            }
+
+            if (response != null && !BridgeProtocol.IsVersioned(response) &&
+                String.Equals(BridgeProtocol.ErrorCode(response), "unauthorized", StringComparison.OrdinalIgnoreCase))
+            {
+                // The running DSH still has the original single-purpose
+                // shutdown Companion. Keep legacy graceful stop working and
+                // let fallback discovery remain the state source.
+                bridgeProtocolIncompatible = true;
+                bridgeError = "The running DSH Companion predates the versioned IPC protocol; legacy fallback is active.";
+                FileLog.Info(Config.Id + ": " + bridgeError);
+                RaiseChanged();
+                return;
+            }
+
+            bridgeError = response == null ? Localization.Text("Bridge.Rejected") : BridgeProtocol.DescribeError(response);
+            FileLog.Warn("DSH IPC bridge rejected " + Config.Id + ": " + bridgeError);
+            bridgeConnectAttempts++;
+            nextBridgeConnectUtc = DateTime.UtcNow.AddMilliseconds(BridgeRetryMilliseconds());
+            RaiseChanged();
+        }
+
+        private int BridgeRetryMilliseconds()
+        {
+            int attempt = Math.Min(bridgeConnectAttempts, 6);
+            return Math.Min(30000, 1000 * (1 << attempt));
+        }
+
+        private void OnBridgeEvent(object sender, BridgeEventReceivedEventArgs args)
+        {
+            QueueBridgeMessage(args == null ? null : args.Message);
+        }
+
+        private void OnBridgeDisconnected(object sender, BridgeDisconnectedEventArgs args)
+        {
+            IpcBridgeConnection connection = sender as IpcBridgeConnection;
+            if (connection == null) return;
+            connection.EventReceived -= OnBridgeEvent;
+            connection.Disconnected -= OnBridgeDisconnected;
+            if (!ReferenceEquals(bridge, connection)) return;
+            bridge = null;
+            bridgeError = args == null ? "The DSH IPC bridge disconnected." : args.Reason;
+            bridgeConnectAttempts++;
+            nextBridgeConnectUtc = DateTime.UtcNow.AddMilliseconds(BridgeRetryMilliseconds());
+            FileLog.Warn("DSH IPC bridge disconnected for " + Config.Id + ": " + bridgeError);
+            if (State != InstanceStateKind.Stopping && State != InstanceStateKind.Stopped) RaiseChanged();
+        }
+
+        private void OnManagedProcessExited(object sender, EventArgs args)
+        {
+            ManagedProcess managed = sender as ManagedProcess;
+            if (managed == null || !ReferenceEquals(managed, launchProcess)) return;
+            managedProcessExited = true;
+            RaiseChanged();
+        }
+
+        private void HandleManagedProcessExit()
+        {
+            if (launchProcess == null) return;
+            if (State == InstanceStateKind.Stopped || State == InstanceStateKind.Updating) return;
+            if (stopExpected || State == InstanceStateKind.Stopping)
+            {
+                FinishStop();
+                return;
+            }
+            if (State == InstanceStateKind.Starting)
+            {
+                FailStart("DeepSeek Harness exited before becoming ready.");
+                return;
+            }
+
+            FileLog.Error(Config.Id + ": DSH process exited unexpectedly (PID " + SafeProcessId() + ").");
+            LastError = "DSH process exited unexpectedly.";
+            CloseBridge();
+            bridgeStatus = null;
+            bridgeError = String.Empty;
+            lifecycleGeneration++;
+            stopExpected = false;
+            launchIdentity = null;
+            ActivePort = 0;
+            startingPort = 0;
+            openWhenReady = false;
+            string patchPath = companion == null ? null : companion.PatchPath;
+            persistedState = null;
+            companion = null;
+            savedPort = 0;
+            savedProcessId = 0;
+            configurationStore.DeleteState(Config.Id);
+            try { if (!String.IsNullOrWhiteSpace(patchPath) && File.Exists(patchPath)) File.Delete(patchPath); } catch { }
+            DisposeLaunchProcess();
+            SetState(InstanceStateKind.Error, "DSH process exited unexpectedly");
+        }
+
+        private bool IsLaunchProcessExited()
+        {
+            if (managedProcessExited) return true;
+            if (launchProcess == null || launchProcess.RootProcess == null) return false;
+            try { return launchProcess.RootProcess.HasExited; }
+            catch { return true; }
+        }
+
+        private void CloseBridge()
+        {
+            IpcBridgeConnection connection = bridge;
+            bridge = null;
+            if (connection == null) return;
+            connection.EventReceived -= OnBridgeEvent;
+            connection.Disconnected -= OnBridgeDisconnected;
+            connection.Close();
+        }
+
+        private void RaiseChanged()
+        {
+            EventHandler handler = Changed;
+            if (handler != null) handler(this, EventArgs.Empty);
+        }
+
+        private string SafeProcessId()
+        {
+            if (launchProcess == null || launchProcess.RootProcess == null) return "unknown";
+            try { return launchProcess.RootProcess.Id.ToString(); }
+            catch { return "unknown"; }
+        }
+
 
         private void SetState(InstanceStateKind state, string text)
         {

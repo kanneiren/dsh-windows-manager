@@ -8,7 +8,7 @@
 
 DSH（npm 包 `@deepseek-ai/dsh`）是实际提供 Web UI 和 Agent 能力的程序；本项目负责在 Windows 上安装和控制 DSH，不包含或替代 DSH 本体。安装管理器后会创建名为 `DSH Manager` 的桌面快捷方式，双击即可启动或打开 DSH Web UI。本项目是独立的非官方第三方管理器，不隶属于 DeepSeek，也不代表其认可或背书。
 
-管理器以当前用户权限运行，默认只让 DSH 监听 `127.0.0.1`，不注册 Windows 服务，也不自动结束未知进程。界面使用 .NET Framework 4.8 WinForms，不依赖 PowerShell 7、Electron 或第三方托盘框架。当前 `0.1.0` 构建的 EXE 约 115 kB，npm tarball 约 150 kB。
+管理器以当前用户权限运行，默认只让 DSH 监听 `127.0.0.1`，不注册 Windows 服务，也不自动结束未知进程。界面使用 .NET Framework 4.8 WinForms，不依赖 PowerShell 7、Electron 或第三方托盘框架。当前 `0.2.0` 构建的 EXE 约 115 kB，npm tarball 约 150 kB。
 
 ## 项目文档
 
@@ -27,7 +27,7 @@ DSH（npm 包 `@deepseek-ai/dsh`）是实际提供 Web UI 和 Agent 能力的程
 - 右键托盘：打开、启动、停止、重启、查看状态、查看版本、检查更新、打开日志和退出管理器。
 - 同时验证 HTTP 页面和进程命令，不会仅凭 `node.exe` 或端口号认定它是 DSH。
 - 3080 被其他程序占用时，可选择空闲端口、查看占用详情或明确确认后结束未知进程。
-- 通过 Cordis 配套插件和 Windows 命名管道执行 DSH 官方优雅关闭流程。
+- 通过 DSH Runtime Bridge 插件和认证命名管道执行优雅关闭，并从 DSH 内部获取权威 PID、端口、版本与生命周期事件；旧版关闭消息保持兼容。
 - 支持 npm 全局安装、固定版本 npx 和 Git 源码检出。
 - 配置模型支持多个 profile/实例，默认只创建一个 Web 实例。
 
@@ -228,13 +228,16 @@ powershell.exe -ExecutionPolicy Bypass -File .\scripts\Install.ps1 `
 
 ## 常驻性能
 
-外部命令信号保持每秒响应。启动中的实例每秒检查一次；稳定运行、停止或冲突状态每五秒执行一次重型端口和 HTTP 健康检查。已验证且 PID、启动时间和映像路径未变化时复用进程命令行指纹，不重复创建 WMI 查询。
+外部命令信号保持每秒响应。由管理器启动并已连接 DSH IPC 桥的实例不再进行周期性的 WMI、进程枚举、端口或 HTTP 轮询：进程存活由 Windows 进程句柄事件负责，运行状态和生命周期事件由认证命名管道推送。后备探测仅用于外部接管、插件不可用、协议不兼容、启动阶段和诊断场景。
 
-在 32 逻辑处理器的当前测试机上，稳定运行中位数从约 `118.61 MB` 工作集、`70.38 MB` 私有内存、`1068` 句柄、`19` 线程下降至约 `65.66 MB`、`30.16 MB`、`521`、`16`；优化后 60 秒整机平均 CPU 约 `0.004%`。进程没有分配 GPU 上下文，额外 30 秒稳定采样没有磁盘读写。可用 `scripts\Measure-Performance.ps1` 在其他机器复测，完整方法见 [性能文档](docs/PERFORMANCE.md)。
+在 32 逻辑处理器的当前测试机上，稳定运行中位数从约 `118.61 MB` 工作集、`70.38 MB` 私有内存、`1068` 句柄、`19` 线程下降至约 `65.66 MB`、`30.16 MB`、`521`、`16`；优化后 60 秒整机平均 CPU 约 `0.004%`。以上为 0.1.0 基线；0.2.0 改为事件驱动后应重新运行 `Measure-Performance.ps1` 复测，方法见 [性能文档](docs/PERFORMANCE.md)。进程没有分配 GPU 上下文，额外 30 秒稳定采样没有磁盘读写。
 
 ## 优雅关闭
 
 管理器启动 DSH 时追加一个动态 `--patch`，加载 `windows-lifecycle.mjs`：
+
+当前桥已从单用途关闭通道升级为版本化运行时协议：管理器保持一条认证 IPC 连接，可调用 `ping`、`getStatus`、`getRuntimeInfo` 和 `shutdown`，并接收 `ready`、`stopping`、`exiting` 事件。`getStatus`/`getRuntimeInfo` 返回 DSH 进程内部可获得的 PID、实际监听端口、DSH 版本、profile 和 DSH home，不会用外部猜测值伪造状态。
+
 
 1. 插件创建仅限本机的随机命名管道。
 2. 管理器发送带 256 位随机令牌的关闭请求。
@@ -243,6 +246,12 @@ powershell.exe -ExecutionPolicy Bypass -File .\scripts\Install.ps1 `
 5. 会话、文件监听器、终端和 HTTP 服务完成清理后退出。
 
 命名管道不是网络端口，不暴露到局域网或互联网。外部启动且未加载配套插件的 DSH 仍可被接管和打开，但停止时会明确提示是否使用强制结束作为备用方案。
+
+
+`plugins/deepseek-harness-web` 目录同时声明了 `dsh.bundle.patch`，可作为正式 DSH 插件包安装；未配置 `pipeName`/`token` 时插件保持 inert，不会开放未认证管道。
+
+旧版单用途 `{"action":"shutdown","token":"..."}` 消息仍被接受，以兼容升级前已启动的 DSH。
+
 
 ## 端口安全
 
@@ -295,7 +304,7 @@ Test.cmd
 - HTTP 与进程双指纹。
 - npm、npx、源码运行适配。
 - 已运行 3080 实例接管。
-- 命名管道认证。
+- 命名管道版本化协议、认证、状态查询和 `ctx.appExit`。
 - 真实 DSH 随机端口启动与 Cordis 优雅关闭。
 - 更新后随机端口兼容性冒烟测试及全局 npm、npx、源码回滚事务。
 - npm CLI 隔离安装、覆盖升级、状态查询、保留配置和卸载。

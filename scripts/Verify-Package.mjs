@@ -25,6 +25,8 @@ const required = [
   'dist/locales/en-US.json',
   'dist/locales/zh-CN.json',
   'dist/plugins/deepseek-harness-web/plugin.json',
+  'dist/plugins/deepseek-harness-web/package.json',
+  'dist/plugins/deepseek-harness-web/cordis.patch.yml',
   'dist/plugins/deepseek-harness-web/cordis/windows-lifecycle.mjs',
   'bin/dsh-windows-manager.js',
   'scripts/Install.ps1',

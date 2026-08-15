@@ -25,9 +25,9 @@ Do not describe the manager package as the DSH runtime. They are separate packag
 - Keep normal operation in the current user context; do not add elevation or administrator requirements.
 - Keep the GUI executable free of a console window.
 - Bind managed DSH Web instances to `127.0.0.1` unless the product requirements explicitly change.
-- Never identify DSH from a port or `node.exe` alone. Preserve HTTP and process-command fingerprints.
+- Never identify DSH from a port or `node.exe` alone. Preserve HTTP and process-command fingerprints for fallback, and revalidate bridge-reported PID/port against Windows process identity before using IPC state authoritatively.
 - Never terminate an unknown process automatically. Revalidate PID, start time, image path, session, services, and port ownership immediately before termination.
-- Try the authenticated Cordis shutdown bridge before offering manual process termination.
+- Try the authenticated versioned Cordis runtime bridge before offering manual process termination.
 - Never install updates silently. Network checks may be automatic; changes require explicit user confirmation.
 - Keep post-update compatibility smoke testing and verified rollback intact for global npm, npx, and source runtimes.
 - Preserve `%LOCALAPPDATA%\DeepSeekHarnessManager\config.json` and user data during install and upgrade.
@@ -40,14 +40,16 @@ Do not describe the manager package as the DSH runtime. They are separate packag
 ## File Map
 
 - `src/Program.cs`: process entry point, single-instance mutex, external action signals.
-- `src/TrayApplication.cs`: tray UI, per-instance menus, marketplace link, language switching, periodic work.
-- `src/InstanceController.cs`: DSH discovery, start, stop, restart, and state transitions.
+- `src/TrayApplication.cs`: tray UI, per-instance menus, marketplace link, language switching, UI notification coalescing.
+- `src/InstanceController.cs`: DSH discovery, start, stop, restart, event-driven state transitions, and IPC-bridge integration.
+- `src/IpcBridge.cs`: versioned named-pipe protocol client, runtime-info parsing, and persistent event connection.
 - `src/PortProcess.cs`: port ownership, process identity, protection, and safe termination.
-- `src/GracefulShutdown.cs`: authenticated named-pipe shutdown client.
+- `src/GracefulShutdown.cs`: authenticated named-pipe shutdown client with legacy compatibility.
 - `src/UpdateManager.cs`: cached checks and confirmed update execution.
 - `src/Configuration.cs`: config creation, normalization, and validation.
-- `plugins/deepseek-harness-web/plugin.json`: DSH launch, probe, runtime, and update declarations.
-- `plugins/deepseek-harness-web/cordis/windows-lifecycle.mjs`: DSH-side shutdown bridge.
+- `plugins/deepseek-harness-web/plugin.json`: DSH launch, probe, runtime, update, and bridge declarations.
+- `plugins/deepseek-harness-web/cordis/windows-lifecycle.mjs`: DSH-side versioned runtime bridge plugin.
+- `plugins/deepseek-harness-web/package.json` + `cordis.patch.yml`: formal installable DSH bundle metadata for the same plugin.
 - `bin/dsh-windows-manager.js`: npm CLI.
 - `scripts/Build.ps1`: deterministic runtime build.
 - `scripts/Install.ps1`: per-user application installation.
@@ -66,7 +68,7 @@ Validate the exact npm payload and install it from the generated tarball:
 
 ```powershell
 npm pack
-node .\tests\npm-package.test.mjs .\dsh-windows-manager-0.1.0.tgz
+node .\tests\npm-package.test.mjs .\dsh-windows-manager-0.2.0.tgz
 ```
 
 Before a version change, update both `package.json` and `src/AssemblyInfo.cs`. Keep user-visible behavior synchronized across both README files, both security policies, both contribution guides, `docs/FEATURES.md`, and `docs/ARCHITECTURE.md` as applicable.

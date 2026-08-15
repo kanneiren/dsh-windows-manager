@@ -45,6 +45,8 @@ try {
   assert.ok(fs.existsSync(path.join(installRoot, 'assets', 'dsh-manager-shortcut.ico')));
   assert.equal(fs.existsSync(path.join(installRoot, 'assets', 'deepseek-whale.png')), false);
   assert.ok(fs.existsSync(path.join(installRoot, 'locales', 'zh-CN.json')));
+  assert.ok(fs.existsSync(path.join(installRoot, 'plugins', 'deepseek-harness-web', 'package.json')));
+  assert.ok(fs.existsSync(path.join(installRoot, 'plugins', 'deepseek-harness-web', 'cordis.patch.yml')));
   assert.ok(fs.existsSync(path.join(installRoot, 'LICENSE')));
   assert.ok(fs.existsSync(path.join(installRoot, 'SECURITY.md')));
   assert.ok(fs.existsSync(path.join(installRoot, 'SECURITY.en.md')));
@@ -100,7 +102,7 @@ try {
 
   result = run(['--version']);
   assert.equal(result.status, 0);
-  assert.match(result.stdout, /^0\.1\.0\s*$/);
+  assert.match(result.stdout, /^0\.2\.0\s*$/);
   result = run(['unknown-command']);
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Unknown command/);

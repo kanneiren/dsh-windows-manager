@@ -17,15 +17,19 @@ The DSH Web UI is launched with `--host 127.0.0.1`. The lifecycle bridge uses a 
 
 A running instance is considered DSH only when the HTTP response contains declared DSH markers and the owning process command line matches declared DSH patterns. A single matching signal is insufficient for normal adoption.
 
+When the in-process versioned IPC bridge authenticates with its per-launch 256-bit token, the bridge-reported PID and port are revalidated against the actual port owner and process identity (start time, image path, and session) before being used as authoritative runtime state. Without the bridge, external adoption still requires both the HTTP and process-command fingerprints.
+
 Before ending any process, the manager reacquires the port owner and verifies PID, process start time, executable path, Windows session, system-directory location, and hosted Windows services. System processes, the manager itself, processes from another session, unverifiable paths, Windows-directory processes, and service hosts are protected.
 
 Unknown processes are never terminated automatically. The user must request termination, and forced termination requires a second confirmation after a normal close attempt fails.
 
 An externally started DSH process that does not become Web-ready is not automatically terminated on a readiness timeout. Startup cleanup is limited to a process launched by the current manager operation.
 
-## Graceful Shutdown
+## Graceful Shutdown and IPC
 
-Each manager-launched DSH instance receives a unique named-pipe name and a random 256-bit hexadecimal token through a generated local patch. A shutdown request must authenticate with that token before the DSH-side plugin calls `ctx.appExit(0)`.
+Each manager-launched DSH instance receives a unique named-pipe name and a random 256-bit hexadecimal token through a generated local patch. The pipe accepts only authenticated `ping`, `getStatus`, `getRuntimeInfo`, and `shutdown` commands; the DSH-side plugin verifies the token before calling `ctx.appExit(0)`.
+
+The protocol is newline-delimited JSON and distinguishes command, response, and event messages. The plugin rejects unknown commands, malformed messages, and unsupported protocol versions, and provides no arbitrary command-execution capability. The original `{"action":"shutdown","token":"..."}` envelope remains accepted for DSH processes launched by older Manager versions.
 
 Pipe names and tokens are launch-specific. They are not listening TCP endpoints. A failed or unavailable bridge does not silently fall back to killing the process.
 
@@ -51,7 +55,7 @@ The executable is currently unsigned. Windows SmartScreen or endpoint security p
 
 ## Known Residual Risks
 
-- DSH is a developer-preview upstream dependency whose CLI, Web markers, or Cordis lifecycle API may change.
+- DSH is a developer-preview upstream dependency whose CLI, Web markers, or Cordis lifecycle API may change. Compatibility code for those APIs is concentrated in the DSH-side plugin and the Manager IPC client.
 - Reading process command lines and port ownership depends on Windows APIs and can fail under unusual permissions or endpoint security controls.
 - npm and Git availability depends on the user's network and configured registry or proxy.
 - A malicious actor able to replace files inside the user's installed application directory already has equivalent user-level access.

@@ -8,15 +8,18 @@
 Desktop shortcut / npm CLI
             |
             v
-DeepSeekHarnessManager.exe
+DeepSeekHarnessManager.exe (Native Windows Supervisor)
   |         |          |
   |         |          +-- JSON configuration, state, and logs
-  |         +------------- HTTP and process fingerprint probes
+  |         +------------- OS process-exit event + fallback HTTP/process probes
   +----------------------- DSH process on 127.0.0.1:<port>
-                               |
-                               +-- Cordis lifecycle patch
-                                      |
-                                      +-- authenticated local named pipe
+                              |
+                              +-- DSH Windows Manager Plugin (Cordis)
+                                     |
+                                     +-- authenticated local named pipe
+                                     |   versioned protocol:
+                                     |   ping / getStatus / getRuntimeInfo / shutdown
+                                     |   events: ready / stopping / exiting
 ```
 
 ## Runtime Layout
@@ -48,13 +51,17 @@ Separating application and data files allows upgrades and default uninstall oper
 
 `Program` creates a per-user mutex and named Windows event handles. A second invocation signals the existing tray process for `open`, `start`, `stop`, `restart`, or `exit` instead of creating a second manager.
 
-`TrayApplication` owns the notification icon, menus, one-second state timer, language selection, and 24-hour update schedule. It creates one `InstanceController` for each configured instance.
+`TrayApplication` owns the notification icon, menus, one-second action-signal timer, language selection, and 24-hour update schedule. It creates one `InstanceController` for each configured instance.
 
-The one-second timer keeps cross-process action signals responsive. Heavy inspection runs every second only while an instance is starting and every five seconds in stable states. A verified command-line fingerprint is reused while PID, start time, and image path remain unchanged; Windows service lookup is deferred until conflict display or termination validation.
+The one-second WinForms timer exists only for cross-process action signals and to coalesce IPC/process notifications into UI updates. State detection is event-driven when possible:
 
-`InstanceController` is the lifecycle state machine. It resolves a runtime, creates a temporary Cordis patch, starts DSH, probes readiness, records state, opens the Web UI, and performs graceful shutdown.
+- A manager-launched DSH process is monitored through the Windows `Process.Exited` event backed by the native process handle.
+- When the DSH plugin is reachable, `IpcBridgeConnection` keeps an authenticated named-pipe connection open and receives `ready`, `stopping`, and `exiting` events plus authoritative status responses.
+- WMI/HTTP/port inspection is no longer the primary stable-state path. It remains available for startup fallback, external adoption, plugin failure, protocol mismatch, diagnostics, and manual safe-termination checks.
 
-`PluginCatalog` loads JSON declarations from `plugins/`. The current DSH plugin defines global npm, Git source, and pinned npx adapters without hard-coding those commands into the tray UI.
+`InstanceController` is the lifecycle state machine. It resolves a runtime, creates a temporary Cordis patch, starts DSH, connects the authenticated IPC bridge, waits for the authoritative `ready` event (using the bounded startup fallback cadence until the bridge connects), records state, opens the Web UI, and performs graceful shutdown.
+
+`PluginCatalog` loads JSON declarations from `plugins/`. The current DSH plugin defines global npm, Git source, and pinned npx adapters without hard-coding those commands into the tray UI. The directory name is retained for installed-layout compatibility; conceptually each entry is an adapter plus its bundled DSH plugin. Renaming to `adapters/` would touch installed paths, persisted plugin ids, and packaging for little runtime benefit, so it remains a documented follow-up rather than an in-place rename.
 
 ## Instance and Port Model
 
@@ -68,13 +75,78 @@ One configured instance produces a flat tray menu. Multiple instances produce on
 
 Use a separate `DshHome` for strong state isolation. An empty value inherits `DSH_HOME` and falls back to the upstream default `~/.dsh` when that environment variable is also empty.
 
+## IPC Bridge Protocol
+
+The Companion has been upgraded from a single-purpose shutdown channel to a versioned runtime bridge. Every new message is one JSON object per line and carries `protocolVersion`, `messageType`, `requestId` (commands/responses), `type`, `payload`, and `error`.
+
+Supported commands:
+
+- `ping`
+- `getStatus`
+- `getRuntimeInfo`
+- `shutdown`
+
+Supported events:
+
+- `ready` — the DSH-side plugin observed the Web server's actual listening port.
+- `stopping` — shutdown was requested through the bridge or Cordis disposal began.
+- `exiting` — the DSH exit path was entered after an accepted bridge shutdown.
+
+The plugin still accepts the original `{"action":"shutdown","token":"..."}` envelope so previously launched DSH processes remain stoppable. New requests require the same 256-bit launch token; malformed messages, unsupported protocol versions, unknown commands, and unauthorized requests get explicit error responses. No unauthenticated local process can query or control DSH.
+
+`getStatus`/`getRuntimeInfo` only report values the plugin can observe reliably: `process.pid`, the actual `webServer.port`, the configured launch profile, `DSH_HOME` resolution, and the DSH version found by walking from `process.argv[1]` to the `@deepseek-ai/dsh` package manifest. The version and port are omitted/null rather than guessed when unavailable.
+
+`plugins/deepseek-harness-web` is also a formal DSH bundle (`package.json` declares `dsh.bundle.patch`), while Manager-launched instances continue to use the per-launch `--patch` so each process gets a unique pipe and token. The bundle entry is inert until configured, which keeps the dynamic patch as the compatibility layer during the DSH API preview.
+
+## State Source Selection
+
+```text
+                +-- Plugin IPC available
+                |   authoritative status + lifecycle events
+Manager ---------+
+                +-- Plugin unavailable
+                    fallback discovery
+                    port map / HTTP markers / process fingerprint
+```
+
+For a Manager-owned process, the OS process handle is the liveness source and the bridge is the state source. Stable running instances no longer perform periodic WMI queries or loopback HTTP probes. Fallback discovery still runs when:
+
+- no companion bridge was persisted;
+- DSH was started externally without the plugin;
+- the plugin failed to load;
+- the bridge protocol is incompatible;
+- the user asks for details, port-conflict diagnostics, or safe-termination validation.
+
+
+## Responsibility Boundary
+
+Native Supervisor keeps everything that must work after DSH dies:
+
+- tray lifecycle and WinForms UI;
+- start, bootstrap, and runtime resolution;
+- restart orchestration (graceful stop -> observe process exit -> start);
+- crash detection and cleanup of Manager-owned processes;
+- update transaction, compatibility smoke test, and rollback;
+- external process adoption;
+- port-conflict diagnostics and guarded manual termination.
+
+The DSH plugin only owns capabilities that require a live DSH:
+
+- authenticated `shutdown` primitive via `ctx.appExit(0)`;
+- authoritative `pid`, actual listening `port`, runtime state;
+- `ping`/`getStatus`/`getRuntimeInfo` queries;
+- `ready`, `stopping`, and `exiting` lifecycle events.
+
+The plugin never restarts, updates, rolls back, or supervises DSH: if DSH crashes, the plugin dies with it.
+
+
 ## Lifecycle Flows
 
-Open first probes the configured and persisted port. A verified running DSH is adopted and opened. Otherwise the manager resolves a runtime, loads the Cordis patch, starts DSH, waits for both fingerprints, records PID and port, and opens the browser.
+Open first prefers an authoritative bridge inspection when available; otherwise it probes the configured and persisted port. A verified running DSH is adopted and opened. Otherwise the manager resolves a runtime, creates the per-launch patch, starts DSH, connects the bridge, waits for the `ready` event or the startup fallback inspection, records PID and port, and opens the browser.
 
 Readiness waits for up to 90 seconds after an explicit open or start request. Cleanup on timeout is limited to a process launched by that manager operation; an externally launched DSH is left running for the user to diagnose.
 
-Start follows the same flow without opening the browser. Stop sends a random 256-bit token over the per-launch named pipe. The DSH-side plugin validates the token and calls `ctx.appExit(0)`. Manual termination is only offered after graceful shutdown is unavailable or fails.
+Start follows the same flow without opening the browser. Stop sends a versioned authenticated shutdown request over the per-launch named pipe; the DSH-side plugin validates the token and calls `ctx.appExit(0)`. The Manager then waits on the process handle. Manual termination is only offered after graceful shutdown is unavailable or fails. Restart is Supervisor-orchestrated: Manager stops DSH, observes process exit, then starts a new process.
 
 Exit closes only the tray manager. It intentionally leaves DSH running so a later manager process can adopt it.
 

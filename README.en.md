@@ -8,7 +8,7 @@
 
 DSH (the npm package `@deepseek-ai/dsh`) is the program that provides the Web UI and Agent capabilities. This project installs and controls DSH on Windows; it does not include or replace DSH itself. Installing the manager creates a desktop shortcut named `DSH Manager`. Double-click it to start DSH or open the DSH Web UI. This is an independent, unofficial third-party manager; it is not affiliated with or endorsed by DeepSeek.
 
-The manager runs with the current user's permissions and, by default, makes DSH listen only on `127.0.0.1`. It does not register a Windows service or automatically terminate unknown processes. The interface uses .NET Framework 4.8 WinForms and does not depend on PowerShell 7, Electron, or a third-party tray framework. The current `0.1.0` build has an EXE of about 115 kB and an npm tarball of about 150 kB.
+The manager runs with the current user's permissions and, by default, makes DSH listen only on `127.0.0.1`. It does not register a Windows service or automatically terminate unknown processes. The interface uses .NET Framework 4.8 WinForms and does not depend on PowerShell 7, Electron, or a third-party tray framework. The current `0.2.0` build has an EXE of about 115 kB and an npm tarball of about 150 kB.
 
 ## Project Documentation
 
@@ -27,7 +27,7 @@ The manager runs with the current user's permissions and, by default, makes DSH 
 - Right-click the tray icon to open, start, stop, or restart DSH; view status and version information; check for updates; open logs; or exit the manager.
 - Verifies both the HTTP page and the process command instead of identifying DSH solely by `node.exe` or a port number.
 - If another program is using port 3080, you can choose a free port, view details about the owner, or terminate the unknown process after explicit confirmation.
-- Uses a companion Cordis plugin and a Windows named pipe to perform DSH's official graceful shutdown procedure.
+- Uses a DSH Runtime Bridge plugin and an authenticated named pipe for graceful shutdown plus authoritative PID, port, version, and lifecycle events; legacy shutdown messages remain compatible.
 - Supports global npm installations, pinned-version npx installations, and Git source checkouts.
 - The configuration model supports multiple profiles/instances, but creates only one Web instance by default.
 
@@ -228,13 +228,16 @@ With multiple instances, each instance has its own submenu.
 
 ## Background Performance
 
-The manager responds to external command signals once per second. Starting instances are checked once per second. A full port and HTTP health check runs every five seconds for instances that are stably running, stopped, or in a conflict state. When an instance has been verified and its PID, start time, and image path have not changed, the process command-line fingerprint is reused instead of creating another WMI query.
+The manager responds to external command signals once per second. Manager-launched instances with the DSH IPC bridge connected no longer run periodic WMI, process-enumeration, port, or HTTP polling: process liveness comes from the Windows process-handle exit event, and runtime state comes from authenticated named-pipe events. Fallback discovery remains for external adoption, unavailable plugins, protocol mismatch, startup, and diagnostics.
 
-On the current test machine with 32 logical processors, the median during stable operation fell from about `118.61 MB` of working set, `70.38 MB` of private memory, `1068` handles, and `19` threads to about `65.66 MB`, `30.16 MB`, `521`, and `16`, respectively. After optimization, average whole-system CPU usage over 60 seconds was about `0.004%`. The process did not allocate a GPU context, and an additional 30-second stable sample showed no disk reads or writes. Use `scripts\Measure-Performance.ps1` to reproduce the measurements on another machine; see the [performance documentation](docs/PERFORMANCE.md) for the complete methodology.
+On the current test machine with 32 logical processors, the median during stable operation fell from about `118.61 MB` of working set, `70.38 MB` of private memory, `1068` handles, and `19` threads to about `65.66 MB`, `30.16 MB`, `521`, and `16`, respectively. After optimization, average whole-system CPU usage over 60 seconds was about `0.004%`. These are the 0.1.0 baseline numbers; re-run `Measure-Performance.ps1` for the event-driven 0.2.0 candidate as described in the [performance documentation](docs/PERFORMANCE.md). The process did not allocate a GPU context, and an additional 30-second stable sample showed no disk reads or writes.
 
 ## Graceful Shutdown
 
 When the manager starts DSH, it appends a dynamic `--patch` that loads `windows-lifecycle.mjs`:
+
+The bridge is now a versioned runtime protocol, not a single-purpose shutdown channel. The manager keeps one authenticated IPC connection and can issue `ping`, `getStatus`, `getRuntimeInfo`, and `shutdown` while receiving `ready`, `stopping`, and `exiting` events. Status and runtime info report PID, actual listening port, DSH version, profile, and DSH home from inside the DSH process; the plugin does not fabricate values it cannot obtain.
+
 
 1. The plugin creates a random named pipe restricted to the local machine.
 2. The manager sends a shutdown request containing a random 256-bit token.
@@ -243,6 +246,12 @@ When the manager starts DSH, it appends a dynamic `--patch` that loads `windows-
 5. DSH exits after sessions, file watchers, terminals, and the HTTP service finish cleaning up.
 
 A named pipe is not a network port and is not exposed to the local network or the internet. An externally started DSH process that did not load the companion plugin can still be adopted and opened, but stopping it explicitly prompts whether to use forced termination as a fallback.
+
+The original single-purpose `{"action":"shutdown","token":"..."}` message is still accepted so DSH processes launched by older Manager versions remain stoppable.
+
+The `plugins/deepseek-harness-web` directory also declares `dsh.bundle.patch`, so the same module can be installed as a regular DSH plugin package. Without a configured `pipeName` and `token` it stays inert and opens no unauthenticated pipe.
+
+
 
 ## Port Safety
 
@@ -295,7 +304,7 @@ Test coverage includes:
 - Dual HTTP and process fingerprints.
 - npm, npx, and source runtime adapters.
 - Adoption of an already-running instance on port 3080.
-- Named-pipe authentication.
+- Versioned named-pipe protocol, authentication, status queries, lifecycle events, and legacy shutdown compatibility.
 - Starting a real DSH instance on a random port and shutting it down gracefully through Cordis.
 - Post-update random-port compatibility smoke tests and rollback transactions for global npm, npx, and source installations.
 - Isolated npm CLI installation, in-place upgrades, status queries, configuration preservation, and uninstallation.

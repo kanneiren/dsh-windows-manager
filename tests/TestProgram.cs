@@ -35,6 +35,7 @@ namespace DeepSeekHarnessManager.Tests
                 Run("external unhealthy DSH preservation", TestExternalUnhealthyHarnessPreserved);
                 Run("runtime resolution", TestRuntimeResolution);
                 Run("companion patch", TestCompanionPatch);
+                Run("bridge protocol", TestBridgeProtocol);
                 Run("npm update check", TestUpdateCheck);
                 Run("update rollback transaction", TestUpdateRollbackTransaction);
                 Run("existing DSH adoption", TestExistingHarnessAdoption);
@@ -61,6 +62,7 @@ namespace DeepSeekHarnessManager.Tests
             PluginDefinition plugin = catalog.Get("deepseek-harness-web");
             Assert(plugin.Runtimes.Count == 3, "expected global/source/npx runtimes");
             Assert(plugin.Companion != null && plugin.Companion.Enabled, "companion must be enabled");
+            Assert(plugin.Companion.BridgeProtocolVersion == 1, "companion bridge protocol version must be 1");
             Assert(plugin.MarketplaceUrl == "https://github.com/topics/dsh-plugin", "plugin marketplace URL is missing");
         }
 
@@ -300,6 +302,27 @@ namespace DeepSeekHarnessManager.Tests
             Assert(launch.Token.Length == 64, "token must be 256-bit hex");
             string yaml = File.ReadAllText(launch.PatchPath);
             Assert(yaml.IndexOf("windows-lifecycle.mjs", StringComparison.Ordinal) >= 0, "patch has no companion module");
+            Assert(yaml.IndexOf("profile:", StringComparison.Ordinal) >= 0, "patch does not record the launched profile");
+        }
+
+        private static void TestBridgeProtocol()
+        {
+            Dictionary<string, object> payload = new Dictionary<string, object>();
+            payload["pong"] = true;
+            BridgeMessage command = BridgeProtocol.Command("ping", "a".PadRight(64, 'a'), payload);
+            Assert(command.ProtocolVersion == BridgeProtocol.CurrentProtocolVersion, "bridge command protocol version mismatch");
+            Assert(command.MessageType == "command", "bridge command message type mismatch");
+            Assert(!String.IsNullOrWhiteSpace(command.RequestId), "bridge command request id missing");
+
+            string json = BridgeProtocol.Serialize(command);
+            Assert(json.IndexOf("\"type\":\"ping\"", StringComparison.Ordinal) >= 0, "bridge wire format must use lowercase protocol keys");
+            BridgeMessage roundTrip = BridgeProtocol.Deserialize(json);
+            Assert(roundTrip.RequestId == command.RequestId, "bridge command round trip failed");
+            Assert(BridgeProtocol.GetString(roundTrip.Payload, "pong") == "True", "bridge payload round trip failed");
+
+            BridgeMessage legacy = BridgeProtocol.Deserialize("{\"ok\":false,\"error\":\"unauthorized\"}");
+            Assert(!BridgeProtocol.IsVersioned(legacy), "legacy companion responses must be detected as unversioned");
+            Assert(BridgeProtocol.ErrorCode(legacy) == "unauthorized", "legacy string error code was not parsed");
         }
 
         private static void TestUpdateCheck()

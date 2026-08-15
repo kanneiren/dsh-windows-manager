@@ -1,0 +1,12 @@
+# Formal DSH bundle entry for the Manager runtime bridge.
+#
+# Installed as a normal profile bundle this row loads the same protocol
+# implementation that Manager launches use through its per-launch --patch.
+# Without a per-launch pipe/token the plugin stays inert and opens no
+# unauthenticated IPC endpoint. Configure this row (or set
+# DSH_WINDOWS_MANAGER_PIPE_NAME / DSH_WINDOWS_MANAGER_TOKEN) only for trusted
+# local integrations.
+- insert:
+    - id: dsh-windows-manager
+      name: ./cordis/windows-lifecycle.mjs
+      config: {}

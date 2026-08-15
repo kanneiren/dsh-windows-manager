@@ -28,7 +28,13 @@ function request(value) {
     let response = ''
     socket.setEncoding('utf8')
     socket.once('connect', () => socket.write(`${JSON.stringify(value)}\n`))
-    socket.on('data', (chunk) => { response += chunk })
+    socket.on('data', (chunk) => {
+      response += chunk
+      if (response.includes('\n')) {
+        socket.destroy()
+        resolve(response)
+      }
+    })
     socket.once('end', () => resolve(response))
     socket.once('error', reject)
   })
@@ -36,15 +42,29 @@ function request(value) {
 
 try {
   await apply(ctx, { pipeName, token })
-  const rejected = await request({ action: 'shutdown', token: '0'.repeat(64) })
-  if (!rejected.includes('unauthorized')) throw new Error('wrong token was not rejected')
+
+  const unauthorized = await request({ protocolVersion: 1, messageType: 'command', requestId: 'r1', type: 'getStatus', token: '0'.repeat(64), payload: {} })
+  if (!unauthorized.includes('unauthorized')) throw new Error('wrong token was not rejected')
   if (exitCode !== undefined) throw new Error('wrong token triggered appExit')
 
+  const ping = await request({ protocolVersion: 1, messageType: 'command', requestId: 'r2', type: 'ping', token, payload: {} })
+  const pingMessage = JSON.parse(ping)
+  if (!pingMessage.ok || pingMessage.payload.pong !== true) throw new Error('versioned ping was not accepted')
+
+  const status = await request({ protocolVersion: 1, messageType: 'command', requestId: 'r3', type: 'getStatus', token, payload: {} })
+  const statusMessage = JSON.parse(status)
+  if (!statusMessage.ok || statusMessage.payload.pid !== process.pid) throw new Error('versioned getStatus did not return the DSH PID')
+  if (!['starting', 'ready'].includes(statusMessage.payload.state)) throw new Error('unexpected DSH state')
+
+  const legacyRejected = await request({ action: 'shutdown', token: '0'.repeat(64) })
+  if (!legacyRejected.includes('unauthorized')) throw new Error('legacy wrong token was not rejected')
+  if (exitCode !== undefined) throw new Error('legacy wrong token triggered appExit')
+
   const accepted = await request({ action: 'shutdown', token })
-  if (!accepted.includes('"ok":true')) throw new Error('correct token was not accepted')
+  if (!accepted.includes('"ok":true')) throw new Error('legacy shutdown token was not accepted')
   await Promise.race([exitPromise, new Promise((_, reject) => setTimeout(() => reject(new Error('appExit timeout')), 3000))])
   if (exitCode !== 0) throw new Error(`unexpected exit code ${exitCode}`)
-  console.log('PASS named-pipe bridge authentication and appExit')
+  console.log('PASS named-pipe protocol, authentication, status, and appExit')
 } finally {
   if (typeof disposer === 'function') await disposer()
 }

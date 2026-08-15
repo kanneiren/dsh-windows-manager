@@ -106,6 +106,7 @@
   "Companion": {
     "Enabled": true,
     "Module": "cordis/windows-lifecycle.mjs",
-    "EntryId": "windows-lifecycle"
+    "EntryId": "windows-lifecycle",
+    "BridgeProtocolVersion": 1
   }
 }

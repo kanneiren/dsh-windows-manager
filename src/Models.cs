@@ -9,6 +9,7 @@ namespace DeepSeekHarnessManager
         Stopped,
         Starting,
         Running,
+        Stopping,
         Conflict,
         Updating,
         Error
@@ -88,6 +89,7 @@ namespace DeepSeekHarnessManager
         public bool Enabled { get; set; }
         public string Module { get; set; }
         public string EntryId { get; set; }
+        public int BridgeProtocolVersion { get; set; }
     }
 
     public sealed class TokenContext
@@ -133,6 +135,7 @@ namespace DeepSeekHarnessManager
         public ProcessIdentity Process { get; set; }
         public bool HttpVerified { get; set; }
         public bool ProcessVerified { get; set; }
+        public bool BridgeVerified { get; set; }
         public string Detail { get; set; }
     }
 
@@ -214,5 +217,18 @@ namespace DeepSeekHarnessManager
         public Process RootProcess { get; set; }
         public string OutputLog { get; set; }
         public string ErrorLog { get; set; }
+        public event EventHandler Exited;
+        public bool ExitObserved { get; private set; }
+
+        public void SignalExit()
+        {
+            ExitObserved = true;
+            EventHandler handler = Exited;
+            if (handler != null)
+            {
+                try { handler(this, EventArgs.Empty); }
+                catch { }
+            }
+        }
     }
 }

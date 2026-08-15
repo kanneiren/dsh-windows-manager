@@ -17,7 +17,7 @@
 .\scripts\Test.ps1
 ```
 
-`Test.ps1` 是 Windows CI 使用的权威测试入口。它会编译应用程序和测试、运行 C# 覆盖测试场景、在临时端口启动真实的 DSH 实例、验证优雅关闭、测试 Node 命名管道桥接，并在隔离目录中测试 npm CLI 安装。
+`Test.ps1` 是 Windows CI 使用的权威测试入口。它会编译应用程序和测试、运行 C# 覆盖测试场景、在临时端口启动真实的 DSH 实例、验证优雅关闭、测试版本化 Node 命名管道桥接，并在隔离目录中测试 npm CLI 安装。
 
 真实启动、指纹、兼容性冒烟和优雅关闭测试使用清单所声明且已全局安装的 DSH。源码运行时解析和回滚测试使用测试专用的伪 `pnpm.cmd` 和伪造的检出目录；这些测试不会执行真实的 pnpm 源代码构建。npx 适配器会在解析和事务层面进行测试。
 
@@ -33,7 +33,7 @@
 
 ```powershell
 npm pack
-node .\tests\npm-package.test.mjs .\dsh-windows-manager-0.1.0.tgz
+node .\tests\npm-package.test.mjs .\dsh-windows-manager-0.2.0.tgz
 ```
 
 ## 变更规则
@@ -61,8 +61,9 @@ node .\tests\npm-package.test.mjs .\dsh-windows-manager-0.1.0.tgz
 4. 从生成的 tarball 安装到隔离目录。
 5. 执行一次真实的按用户升级，并验证 `config.json` 未被更改。
 6. 验证两个区域设置文件、插件载荷、桌面快捷方式、托盘进程及 DSH Web 指纹。
-7. 扫描已跟踪文件中的凭据和私有数据。
-8. 创建 GitHub Release 产物和校验和。
-9. 仅在 GitHub 标签和 Release 最终确定后发布 npm 包。
+7. 对 0.2.0 事件驱动候选重新运行 `Measure-Performance.ps1`，并更新性能文档中的基线。
+8. 扫描已跟踪文件中的凭据和私有数据。
+9. 创建 GitHub Release 产物和校验和。
+10. 仅在 GitHub 标签和 Release 最终确定后发布 npm 包。
 
 该软件包通过 `publishConfig` 将发布目标固定为 `https://registry.npmjs.org/`。这不会改变用户为安装而选择的 registry，并可防止维护者的下载镜像意外成为发布目标。

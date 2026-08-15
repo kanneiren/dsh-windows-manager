@@ -25,6 +25,7 @@ namespace DeepSeekHarnessManager
         private readonly UpdateManager updateManager;
         private readonly SignalSet signals;
         private readonly string initialAction;
+        private readonly Control uiSink;
         private bool initialActionHandled;
         private string lastUiSignature;
 
@@ -41,6 +42,8 @@ namespace DeepSeekHarnessManager
             updateChecksInFlight = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             ownedIcons = new List<Icon>();
             updateManager = new UpdateManager(store, config);
+            uiSink = new Control();
+            uiSink.CreateControl();
 
             foreach (InstanceConfig instance in config.Instances)
             {
@@ -86,7 +89,9 @@ namespace DeepSeekHarnessManager
             notifyIcon.Dispose();
             menu.Dispose();
             foreach (Icon icon in ownedIcons) icon.Dispose();
+            foreach (InstanceController controller in controllers) controller.Close();
             timer.Dispose();
+            uiSink.Dispose();
             base.ExitThreadCore();
         }
 
@@ -277,7 +282,27 @@ namespace DeepSeekHarnessManager
 
         private void ControllerChanged(object sender, EventArgs args)
         {
-            RefreshUi();
+            InstanceController controller = sender as InstanceController;
+            if (uiSink.IsDisposed || controller == null) return;
+            try
+            {
+                uiSink.BeginInvoke((MethodInvoker)delegate
+                {
+                    try
+                    {
+                        controller.DrainBridgeMessages();
+                        RefreshUi();
+                    }
+                    catch (Exception exception)
+                    {
+                        FileLog.Error(exception);
+                    }
+                });
+            }
+            catch (Exception exception)
+            {
+                FileLog.Warn("Could not marshal controller notification to the UI: " + exception.Message);
+            }
         }
 
         private void RefreshUi()
@@ -293,12 +318,12 @@ namespace DeepSeekHarnessManager
                 if (controller.UpdateInfo != null && controller.UpdateInfo.UpdateAvailable)
                     binding.Version.Text = Localization.Text("Menu.Version") + ": " + installed + " (" + Localization.Format("Version.Update", controller.UpdateInfo.LatestVersion) + ")";
                 else binding.Version.Text = Localization.Text("Menu.Version") + ": " + installed;
-                binding.Open.Enabled = controller.State != InstanceStateKind.Updating;
+                binding.Open.Enabled = controller.State != InstanceStateKind.Updating && controller.State != InstanceStateKind.Stopping;
                 binding.Start.Enabled = controller.State == InstanceStateKind.Stopped || controller.State == InstanceStateKind.Conflict || controller.State == InstanceStateKind.Error;
                 binding.Stop.Enabled = controller.State == InstanceStateKind.Running || controller.State == InstanceStateKind.Starting;
                 binding.Restart.Enabled = controller.State == InstanceStateKind.Running;
                 binding.UpdateNow.Visible = controller.UpdateInfo != null && controller.UpdateInfo.UpdateAvailable;
-                binding.UpdateNow.Enabled = controller.State != InstanceStateKind.Starting && controller.State != InstanceStateKind.Updating;
+                binding.UpdateNow.Enabled = controller.State != InstanceStateKind.Starting && controller.State != InstanceStateKind.Stopping && controller.State != InstanceStateKind.Updating;
             }
             InstanceStateKind aggregate = AggregateState();
             notifyIcon.Icon = GetIcon(aggregate);
@@ -316,6 +341,8 @@ namespace DeepSeekHarnessManager
                 values.Add(controller.State.ToString());
                 values.Add(controller.ActivePort.ToString());
                 values.Add(controller.InstalledVersion ?? String.Empty);
+                values.Add(controller.IpcBridgeConnected ? "1" : "0");
+                values.Add(controller.BridgeRuntime == null ? String.Empty : (controller.BridgeRuntime.State ?? String.Empty));
                 values.Add(controller.UpdateInfo == null ? String.Empty : controller.UpdateInfo.LatestVersion ?? String.Empty);
                 values.Add(controller.UpdateInfo != null && controller.UpdateInfo.UpdateAvailable ? "1" : "0");
             }
@@ -327,6 +354,7 @@ namespace DeepSeekHarnessManager
             if (controllers.Any(delegate(InstanceController item) { return item.State == InstanceStateKind.Error; })) return InstanceStateKind.Error;
             if (controllers.Any(delegate(InstanceController item) { return item.State == InstanceStateKind.Conflict; })) return InstanceStateKind.Conflict;
             if (controllers.Any(delegate(InstanceController item) { return item.State == InstanceStateKind.Starting || item.State == InstanceStateKind.Updating; })) return InstanceStateKind.Starting;
+            if (controllers.Any(delegate(InstanceController item) { return item.State == InstanceStateKind.Stopping; })) return InstanceStateKind.Stopping;
             if (controllers.Any(delegate(InstanceController item) { return item.State == InstanceStateKind.Running; })) return InstanceStateKind.Running;
             return InstanceStateKind.Stopped;
         }
@@ -336,6 +364,7 @@ namespace DeepSeekHarnessManager
             int port = controller.ActivePort > 0 ? controller.ActivePort : controller.Config.PreferredPort;
             if (controller.State == InstanceStateKind.Running) return Localization.Format("State.Running", port);
             if (controller.State == InstanceStateKind.Starting) return Localization.Format("State.Starting", port);
+            if (controller.State == InstanceStateKind.Stopping) return Localization.Format("State.Stopping", port);
             if (controller.State == InstanceStateKind.Conflict) return Localization.Format("State.Conflict", controller.Config.PreferredPort);
             return LocalizedStateName(controller.State);
         }
@@ -345,6 +374,7 @@ namespace DeepSeekHarnessManager
             if (state == InstanceStateKind.Stopped) return Localization.Text("State.Stopped");
             if (state == InstanceStateKind.Starting) return Localization.Text("State.StartingName");
             if (state == InstanceStateKind.Running) return Localization.Text("State.RunningName");
+            if (state == InstanceStateKind.Stopping) return Localization.Text("State.StoppingName");
             if (state == InstanceStateKind.Conflict) return Localization.Text("State.ConflictName");
             if (state == InstanceStateKind.Updating) return Localization.Text("State.Updating");
             if (state == InstanceStateKind.Error) return Localization.Text("State.Error");
@@ -373,6 +403,7 @@ namespace DeepSeekHarnessManager
             LoadIcon(InstanceStateKind.Conflict, "deepseek-whale-conflict.ico");
             LoadIcon(InstanceStateKind.Error, "deepseek-whale-error.ico");
             icons[InstanceStateKind.Updating] = icons[InstanceStateKind.Starting];
+            icons[InstanceStateKind.Stopping] = icons[InstanceStateKind.Starting];
         }
 
         private void LoadIcon(InstanceStateKind state, string fileName)

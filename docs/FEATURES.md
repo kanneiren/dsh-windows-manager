@@ -11,15 +11,15 @@
 | Installation | Per-user LocalAppData installation from source scripts or the npm CLI |
 | Launch | Desktop shortcut, tray double-click, npm CLI, or direct EXE action |
 | Runtime adapters | Global npm, fixed-version npx, and Git source checkout |
-| Discovery | Combined HTTP content and process-command fingerprints |
+| Discovery | Authoritative DSH IPC status/events when the bridge is connected; combined HTTP content and process-command fingerprints remain as fallback |
 | Ports | Configurable preferred port, bounded fallback selection, conflict details |
 | Multi-instance | Independent menu, status, port, workspace, runtime, and optional DSH home |
 | Configuration | Separate menu actions for manager `config.json` and each instance's DSH settings directory |
-| Shutdown | Authenticated Cordis `ctx.appExit(0)` bridge with guarded manual fallback |
+| Shutdown | Authenticated versioned DSH IPC bridge (`ping`/`getStatus`/`getRuntimeInfo`/`shutdown`) with legacy Companion fallback and guarded manual termination |
 | Updates | 24-hour checks, confirmed installation, isolated compatibility smoke test, and verified rollback |
-| Performance | One-second command response with five-second stable health probes and cached immutable process fingerprints |
+| Performance | Event-driven process and IPC monitoring for Manager-owned DSH; fallback WMI/HTTP probes only when the bridge is unavailable |
 | Languages | English, Simplified Chinese, and startup-time Windows language selection |
-| Status | Tray state, details dialog, logs, and npm CLI JSON or text output |
+| Status | Tray state, details dialog with IPC state/version/home, logs, and npm CLI JSON or text output |
 | Plugin discovery | Opens the GitHub `dsh-plugin` topic |
 | Troubleshooting | URL, dual fingerprints, process identity, output/error logs, and a documented decision tree |
 | Upgrade | Replaces runtime files while preserving configuration and mutable data |

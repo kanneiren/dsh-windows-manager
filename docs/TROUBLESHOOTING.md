@@ -4,7 +4,7 @@ Use this guide when the browser does not open, the page does not load, or the tr
 
 ## 1. Collect the Current Status
 
-Open the tray instance menu and select `Status details`. Record the configured port, Web UI URL, PID, process path, HTTP fingerprint, process fingerprint, output log, error log, and last error.
+Open the tray instance menu and select `Status details`. Record the configured port, Web UI URL, PID, process path, HTTP fingerprint, process fingerprint, DSH IPC bridge state, output log, error log, and last error.
 
 From a terminal or coding agent, run:
 
@@ -31,6 +31,7 @@ Do not post an unreviewed status report or log publicly. Paths, workspace names,
 | Process fingerprint true, HTTP false | DSH is starting, unhealthy, or serving unexpected content | Wait up to 90 seconds, then inspect both DSH logs |
 | HTTP 200 but required markers missing | The port serves another page or upstream Web output changed | Verify the URL, process, and DSH version |
 | Both fingerprints true | DSH is healthy from the manager's perspective | Investigate browser, proxy, extension, or cached-page behavior |
+| IPC bridge connected, DSH state `ready` | DSH itself confirms the listening port, PID, version, profile, and home | Treat this as the authoritative running state; use fallback probes only for comparison |
 
 ## 3. Test the Local URL Directly
 

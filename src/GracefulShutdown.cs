@@ -36,6 +36,8 @@ namespace DeepSeekHarnessManager
             yaml.AppendLine("      config:");
             yaml.AppendLine("        pipeName: " + YamlSingle(pipeName));
             yaml.AppendLine("        token: " + YamlSingle(token));
+            if (!String.IsNullOrWhiteSpace(instance.Profile))
+                yaml.AppendLine("        profile: " + YamlSingle(instance.Profile));
             File.WriteAllText(patchPath, yaml.ToString(), new UTF8Encoding(false));
             CompanionLaunch launch = new CompanionLaunch();
             launch.PipeName = pipeName;
@@ -60,6 +62,57 @@ namespace DeepSeekHarnessManager
                 error = Localization.Text("Bridge.Unavailable");
                 return false;
             }
+
+            BridgeMessage response = RequestVersioned(pipeName, token, timeoutMilliseconds, out error);
+            if (response != null && response.Ok) return true;
+            if (response != null && BridgeProtocol.IsVersioned(response) &&
+                !String.Equals(BridgeProtocol.ErrorCode(response), "bridge-timeout", StringComparison.OrdinalIgnoreCase) &&
+                !String.Equals(BridgeProtocol.ErrorCode(response), "bridge-disconnected", StringComparison.OrdinalIgnoreCase))
+            {
+                if (String.IsNullOrWhiteSpace(error)) error = BridgeProtocol.DescribeError(response);
+                return false;
+            }
+
+            // Old DSH builds only understand the original single-purpose
+            // shutdown envelope. Try that compatibility path once before
+            // reporting failure to the user.
+            string legacyError;
+            bool legacyAccepted = RequestLegacy(pipeName, token, timeoutMilliseconds, out legacyError);
+            if (legacyAccepted)
+            {
+                error = String.Empty;
+                return true;
+            }
+            if (String.IsNullOrWhiteSpace(error)) error = legacyError;
+            return false;
+        }
+
+        private static BridgeMessage RequestVersioned(string pipeName, string token, int timeoutMilliseconds, out string error)
+        {
+            error = String.Empty;
+            int connectTimeout = Math.Max(200, timeoutMilliseconds / 2);
+            int requestTimeout = Math.Max(200, timeoutMilliseconds - connectTimeout);
+            IpcBridgeConnection connection = IpcBridgeConnection.Connect(pipeName, token, connectTimeout, out error);
+            if (connection == null) return null;
+            try
+            {
+                BridgeMessage response = connection.Request("shutdown", null, requestTimeout);
+                if (response == null)
+                {
+                    error = Localization.Text("Bridge.Rejected");
+                    return null;
+                }
+                return response;
+            }
+            finally
+            {
+                connection.Close();
+            }
+        }
+
+        private static bool RequestLegacy(string pipeName, string token, int timeoutMilliseconds, out string error)
+        {
+            error = String.Empty;
             try
             {
                 using (NamedPipeClientStream pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous))
