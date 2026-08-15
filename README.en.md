@@ -199,16 +199,12 @@ The source adapter validates `.git`, `package.json`, `pnpm-lock.yaml`, and `apps
 - `Status details`: show the port, PID, path, fingerprint, workspace, and logs.
 - `Open workspace`: open the instance's working directory.
 - `Open DSH settings file`: open the instance's `DSH_HOME` directory containing `settings.yaml` without launching a YAML editor.
-- `DSH plugin marketplace`: open the GitHub plugin discovery page (`github.com/topics/dsh-plugin`).
+- `DSH plugin marketplace`: open the GitHub plugin discovery page.
 - `Open manager configuration file`: open the manager's `%LOCALAPPDATA%\DeepSeekHarnessManager\config.json`.
 - `Open logs`: open the log directory.
 - `Language / 语言`: switch between following the Windows setting, Simplified Chinese, and English.
 - `About`: show the manager version and .NET runtime.
 - `Exit manager (leave DSH running)`: exit only the tray manager and leave the DSH service running.
-
-## Plugin Marketplace and Publishing
-
-`DSH plugin marketplace` opens `github.com/topics/dsh-plugin`, a GitHub topic page rather than a reviewed store: any public repository appears there after adding the `dsh-plugin` topic (plus `dsh`, `deepseek-harness`, etc.) under Settings → Topics, which is how this project appears in the community discovery page. The curated community list ([awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)) only accepts plugins installable via `dsh plugin add` that declare a `dsh.bundle` manifest. The DSH Runtime Bridge plugin shipped in this repository only activates with the per-launch pipe and token the Manager generates on every start, so standalone installation is meaningless and it is intentionally not in the curated list. To publish a standalone plugin, split `plugins/deepseek-harness-web` into its own repository and publish it in the `dsh.bundle` manifest format.
 
 With multiple instances, each instance has its own submenu.
 

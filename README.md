@@ -199,16 +199,12 @@ powershell.exe -ExecutionPolicy Bypass -File .\scripts\Install.ps1 `
 - `Status details`：显示端口、PID、路径、指纹、工作区和日志。
 - `Open workspace`：打开实例工作目录。
 - `打开 DSH 配置文件`：打开该实例 `settings.yaml` 所在的 `DSH_HOME` 目录，不直接启动 YAML 编辑器。
-- `DSH plugin marketplace`：打开 GitHub 插件发现页（`github.com/topics/dsh-plugin`）。
+- `DSH plugin marketplace`：打开 GitHub 插件发现页。
 - `打开管理器配置文件`：打开管理器的 `%LOCALAPPDATA%\DeepSeekHarnessManager\config.json`。
 - `Open logs`：打开日志目录。
 - `Language / 语言`：在跟随 Windows、简体中文和 English 之间切换。
 - `About`：显示管理器版本和 .NET 运行时。
 - `Exit manager (leave DSH running)`：只退出托盘，保持 DSH 服务运行。
-
-## 插件市场与上架
-
-`DSH plugin marketplace` 打开 `github.com/topics/dsh-plugin`，这是一个 GitHub 主题标签页而非审核制商店：任何公开仓库在 Settings → Topics 添加 `dsh-plugin`（及 `dsh`、`deepseek-harness` 等）标签后即出现在该页，本项目仓库已采用同样的方式出现在社区发现页中。社区精选目录（[awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)）只收录可通过 `dsh plugin add` 独立安装并声明 `dsh.bundle` 清单的插件；随本仓库发布的 DSH Runtime Bridge 插件依赖 Manager 每次启动生成的 per-launch 管道与令牌配置才激活，单独安装没有意义，因此不进入精选目录。若需要独立插件形态，可将 `plugins/deepseek-harness-web` 拆分为独立仓库并按上述清单格式发布。
 
 多个实例时，每个实例拥有独立子菜单。
 
