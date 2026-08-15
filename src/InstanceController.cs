@@ -854,7 +854,7 @@ namespace DeepSeekHarnessManager
             if (bridgeConnectTask != null && !bridgeConnectTask.IsCompleted) return;
             if (DateTime.UtcNow < nextBridgeConnectUtc) return;
 
-            bridgeConnectTask = Task.Factory.StartNew(BridgeConnectWorker, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            bridgeConnectTask = Task.Run(new Action(BridgeConnectWorker));
         }
 
         private void BridgeConnectWorker()

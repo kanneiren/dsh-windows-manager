@@ -223,7 +223,7 @@ namespace DeepSeekHarnessManager
             writer.AutoFlush = true;
             writer.NewLine = "\n";
             reader = new StreamReader(pipe, Encoding.UTF8, false, 4096, true);
-            readerTask = Task.Factory.StartNew(ReaderLoop, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            readerTask = RunReaderLoop();
         }
 
         public event EventHandler<BridgeEventReceivedEventArgs> EventReceived;
@@ -315,14 +315,14 @@ namespace DeepSeekHarnessManager
             Close();
         }
 
-        private void ReaderLoop()
+        private async Task RunReaderLoop()
         {
             while (!closing)
             {
                 string line;
                 try
                 {
-                    line = reader.ReadLine();
+                    line = await reader.ReadLineAsync().ConfigureAwait(false);
                 }
                 catch (Exception exception)
                 {

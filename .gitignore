@@ -22,6 +22,14 @@ npm-debug.log*
 /.tmp/
 *.tmp
 
+# Local performance attribution / stress tooling (not part of the release)
+/scripts/Measure-Attribution.ps1
+/scripts/Measure-PipeReconnect.ps1
+/scripts/Measure-Restart50.ps1
+/scripts/Measure-Settle.ps1
+/scripts/Measure-Stress.ps1
+/scripts/Measure-Threads.ps1
+
 # Operating system files
 .DS_Store
 Thumbs.db

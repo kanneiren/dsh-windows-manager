@@ -199,12 +199,16 @@ The source adapter validates `.git`, `package.json`, `pnpm-lock.yaml`, and `apps
 - `Status details`: show the port, PID, path, fingerprint, workspace, and logs.
 - `Open workspace`: open the instance's working directory.
 - `Open DSH settings file`: open the instance's `DSH_HOME` directory containing `settings.yaml` without launching a YAML editor.
-- `DSH plugin marketplace`: open the GitHub plugin discovery page.
+- `DSH plugin marketplace`: open the GitHub plugin discovery page (`github.com/topics/dsh-plugin`).
 - `Open manager configuration file`: open the manager's `%LOCALAPPDATA%\DeepSeekHarnessManager\config.json`.
 - `Open logs`: open the log directory.
 - `Language / 语言`: switch between following the Windows setting, Simplified Chinese, and English.
 - `About`: show the manager version and .NET runtime.
 - `Exit manager (leave DSH running)`: exit only the tray manager and leave the DSH service running.
+
+## Plugin Marketplace and Publishing
+
+`DSH plugin marketplace` opens `github.com/topics/dsh-plugin`, a GitHub topic page rather than a reviewed store: any public repository appears there after adding the `dsh-plugin` topic (plus `dsh`, `deepseek-harness`, etc.) under Settings → Topics, which is how this project appears in the community discovery page. The curated community list ([awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)) only accepts plugins installable via `dsh plugin add` that declare a `dsh.bundle` manifest. The DSH Runtime Bridge plugin shipped in this repository only activates with the per-launch pipe and token the Manager generates on every start, so standalone installation is meaningless and it is intentionally not in the curated list. To publish a standalone plugin, split `plugins/deepseek-harness-web` into its own repository and publish it in the `dsh.bundle` manifest format.
 
 With multiple instances, each instance has its own submenu.
 
@@ -230,7 +234,7 @@ With multiple instances, each instance has its own submenu.
 
 The manager responds to external command signals once per second. Manager-launched instances with the DSH IPC bridge connected no longer run periodic WMI, process-enumeration, port, or HTTP polling: process liveness comes from the Windows process-handle exit event, and runtime state comes from authenticated named-pipe events. Fallback discovery remains for external adoption, unavailable plugins, protocol mismatch, startup, and diagnostics.
 
-On the current test machine with 32 logical processors, stable 0.2.0 operation (bridge connected, 60-second sampling after settling) showed medians of about `109.81 MB` of working set, `62.65 MB` of private memory, `846` handles, and `20` threads, with a 60-second average CPU of `0.000%` on the one-core equivalent. The 0.1.0 control on the same machine measured `59.07 MB`, `31.72 MB`, `473` handles, `12` threads, and `0.103%` CPU. The event-driven refactor trades modest memory and handle growth for zero steady-state CPU: the persistent authenticated pipe, its reader task, and a woken CLR server GC account for the resource difference. Values are stable across repeated samples with no leak trend; the managed heap stays near 7 MB. Memory is not the primary optimization target for this project. Reproduce with [the performance documentation](docs/PERFORMANCE.md). The process did not allocate a GPU context.
+On the current test machine with 32 logical processors, stable 0.2.0 operation (bridge connected, 60-second sampling after settling) showed medians of about `109.81 MB` of working set, `62.65 MB` of private memory, `846` handles, and `20` threads, with a 60-second average CPU of `0.000%` on the one-core equivalent. The 0.1.0 control on the same machine measured `59.07 MB`, `31.72 MB`, `473` handles, `12` threads, and `0.103%` CPU. The event-driven refactor trades modest memory and handle growth for zero steady-state CPU: the difference comes primarily from CLR/WinForms/native runtime infrastructure (thread pool workers, I/O completion ports, GC segments, the persistent authenticated pipe, and WinForms resources), while the business managed heap stays small (a few MB). Values are stable across repeated samples with no leak trend; the runtime uses the default Workstation GC. Memory is not the primary optimization target for this project. Reproduce with [the performance documentation](docs/PERFORMANCE.md). The process did not allocate a GPU context.
 
 ## Graceful Shutdown
 

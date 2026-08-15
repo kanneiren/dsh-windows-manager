@@ -13,7 +13,7 @@ Schema version 1 fields:
 
 ## Runtime Bridge Protocol
 
-The Companion module in `cordis/windows-lifecycle.mjs` is a Cordis function plugin. Manager launches load it through a generated per-launch `--patch`; the same module can also be installed as a DSH bundle because `package.json` declares `dsh.bundle.patch`. Without a configured `pipeName` and `token`, the bundle entry stays inert.
+The Companion module in `cordis/windows-lifecycle.mjs` is a Cordis function plugin. Manager launches load it through a generated per-launch `--patch`; the same module can also be installed as a DSH bundle because `package.json` declares `dsh.bundle.patch`. Without a configured `pipeName` and `token`, the bundle entry stays inert. Because the bridge only activates with the per-launch pipe/token the Manager generates, it is not published as a standalone `dsh plugin add` package and is intentionally absent from the curated [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin) list; the project appears in the community `dsh-plugin` topic page instead.
 
 New messages are newline-delimited JSON:
 
