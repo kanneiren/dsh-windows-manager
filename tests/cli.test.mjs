@@ -13,6 +13,7 @@ if (process.platform !== 'win32') {
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const cli = path.join(projectRoot, 'bin', 'dsh-windows-manager.js');
+const expectedVersion = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf8')).version;
 const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-manager-cli-'));
 const installRoot = path.join(temporaryRoot, 'app');
 const dataRoot = path.join(temporaryRoot, 'data');
@@ -102,7 +103,7 @@ try {
 
   result = run(['--version']);
   assert.equal(result.status, 0);
-  assert.match(result.stdout, /^0\.2\.0\s*$/);
+  assert.equal(result.stdout.trim(), expectedVersion);
   result = run(['unknown-command']);
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Unknown command/);
