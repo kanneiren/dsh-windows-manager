@@ -69,6 +69,9 @@ namespace DeepSeekHarnessManager
                 savedProcessId = persistedState.ProcessId;
                 bridgeLaunch = new RuntimeBridgeLaunch();
                 bridgeLaunch.PipeName = persistedState.PipeName;
+                bridgeLaunch.Transport = persistedState.Transport;
+                bridgeLaunch.Host = persistedState.Host;
+                bridgeLaunch.Port = persistedState.BridgePort;
                 bridgeLaunch.Token = persistedState.PipeToken;
                 bridgeLaunch.PatchPath = persistedState.PatchPath;
             }
@@ -407,6 +410,9 @@ namespace DeepSeekHarnessManager
                 persistedState.Ownership = InstanceModel.ToText(ownership);
                 persistedState.RuntimeId = runtime.Definition.Id;
                 persistedState.PipeName = bridgeLaunch == null ? String.Empty : bridgeLaunch.PipeName;
+                persistedState.Transport = bridgeLaunch == null ? String.Empty : bridgeLaunch.Transport;
+                persistedState.Host = bridgeLaunch == null ? String.Empty : bridgeLaunch.Host;
+                persistedState.BridgePort = bridgeLaunch == null ? 0 : bridgeLaunch.Port;
                 persistedState.PipeToken = bridgeLaunch == null ? String.Empty : bridgeLaunch.Token;
                 persistedState.PatchPath = patchPath;
                 persistedState.OutputLog = outputLog;
@@ -446,6 +452,25 @@ namespace DeepSeekHarnessManager
             if (!interaction.Confirm(ManagerConfirmKind.Warning,
                 Localization.Format("Dialog.GracefulFailed", bridgeError),
                 Localization.Text("App.Title"))) return false;
+            if (String.Equals(Config.RuntimeType, InstanceModel.RuntimeTypeWsl, StringComparison.OrdinalIgnoreCase))
+            {
+                if (launchProcess == null)
+                {
+                    interaction.Show(ManagerMessageKind.Warning, Localization.Text("Dialog.NotVerified"));
+                    return false;
+                }
+                if (!interaction.ConfirmForceEnd(launchIdentity))
+                {
+                    return false;
+                }
+                if (activeAdapter != null)
+                {
+                    activeAdapter.Kill(launchProcess);
+                    launchProcess.WaitForExit(5000);
+                }
+                FinishStop();
+                return true;
+            }
             if (!inspection.ProcessVerified && !inspection.HttpVerified)
             {
                 interaction.Show(ManagerMessageKind.Warning, Localization.Text("Dialog.NotVerified"));
@@ -683,11 +708,7 @@ namespace DeepSeekHarnessManager
         private bool TryGracefulStop(PortInspection inspection, out string error)
         {
             stopExpected = true;
-            bool requested = GracefulShutdownClient.Request(
-                bridgeLaunch == null ? null : bridgeLaunch.PipeName,
-                bridgeLaunch == null ? null : bridgeLaunch.Token,
-                1500,
-                out error);
+            bool requested = GracefulShutdownClient.Request(bridgeLaunch, 1500, out error);
             if (!requested)
             {
                 stopExpected = false;
@@ -733,6 +754,9 @@ namespace DeepSeekHarnessManager
             persistedState.StartedAtUtc = startedAtUtc.HasValue ? startedAtUtc.Value.ToString("o") : String.Empty;
             persistedState.Ownership = InstanceModel.ToText(ownership);
             persistedState.PipeName = bridgeLaunch == null ? persistedState.PipeName : bridgeLaunch.PipeName;
+            persistedState.Transport = bridgeLaunch == null ? persistedState.Transport : bridgeLaunch.Transport;
+            persistedState.Host = bridgeLaunch == null ? persistedState.Host : bridgeLaunch.Host;
+            persistedState.BridgePort = bridgeLaunch == null ? persistedState.BridgePort : bridgeLaunch.Port;
             persistedState.PipeToken = bridgeLaunch == null ? persistedState.PipeToken : bridgeLaunch.Token;
             persistedState.PatchPath = bridgeLaunch == null ? persistedState.PatchPath : bridgeLaunch.PatchPath;
             persistedState.UpdatedAt = DateTime.UtcNow.ToString("o");
@@ -813,6 +837,8 @@ namespace DeepSeekHarnessManager
 
             if (info.IsReady)
             {
+                if (String.Equals(Config.RuntimeType, InstanceModel.RuntimeTypeWsl, StringComparison.OrdinalIgnoreCase))
+                    ProcessId = info.Pid;
                 TryCompleteStartFromBridge();
             }
             else if (info.IsStopping && State == InstanceStateKind.Running)
@@ -867,6 +893,26 @@ namespace DeepSeekHarnessManager
         private PortInspection BuildInspectionFromBridge(BridgeRuntimeInfo info)
         {
             if (info == null || info.Pid <= 0 || info.Port <= 0 || info.Port > 65535) return null;
+            if (String.Equals(Config.RuntimeType, InstanceModel.RuntimeTypeWsl, StringComparison.OrdinalIgnoreCase))
+            {
+                ProcessIdentity wslIdentity = new ProcessIdentity();
+                wslIdentity.ProcessId = info.Pid;
+                wslIdentity.Name = "DSH (WSL)";
+                wslIdentity.ImagePath = Config.WslDistro ?? String.Empty;
+                wslIdentity.CommandLine = String.Empty;
+                wslIdentity.SessionId = -1;
+                wslIdentity.Services = new List<string>();
+                PortInspection wslInspection = new PortInspection();
+                wslInspection.Kind = InstanceStateKind.Running;
+                wslInspection.Port = info.Port;
+                wslInspection.ProcessId = info.Pid;
+                wslInspection.Process = wslIdentity;
+                wslInspection.ProcessVerified = false;
+                wslInspection.HttpVerified = false;
+                wslInspection.BridgeVerified = true;
+                wslInspection.Detail = "Authoritative WSL Runtime Bridge";
+                return wslInspection;
+            }
             if (PortMap.GetPreferredListenerProcessId(info.Port) != info.Pid)
             {
                 FileLog.Warn("DSH IPC bridge PID/port mismatch for " + Config.Id + ": pid=" + info.Pid + " port=" + info.Port);
@@ -918,7 +964,11 @@ namespace DeepSeekHarnessManager
         private void EnsureBridgeConnection()
         {
             if (bridgeProtocolIncompatible || bridgeLaunch == null) return;
-            if (String.IsNullOrWhiteSpace(bridgeLaunch.PipeName) || String.IsNullOrWhiteSpace(bridgeLaunch.Token)) return;
+            if (String.Equals(bridgeLaunch.Transport, "tcp", StringComparison.OrdinalIgnoreCase))
+            {
+                if (String.IsNullOrWhiteSpace(bridgeLaunch.Host) || bridgeLaunch.Port < 1 || bridgeLaunch.Port > 65535 || String.IsNullOrWhiteSpace(bridgeLaunch.Token)) return;
+            }
+            else if (String.IsNullOrWhiteSpace(bridgeLaunch.PipeName) || String.IsNullOrWhiteSpace(bridgeLaunch.Token)) return;
             if (bridge != null)
             {
                 if (bridge.IsConnected) return;
@@ -937,7 +987,9 @@ namespace DeepSeekHarnessManager
             if (launch == null || generation != lifecycleGeneration) return;
 
             string error;
-            IpcBridgeConnection connection = IpcBridgeConnection.Connect(launch.PipeName, launch.Token, 2500, out error);
+            IpcBridgeConnection connection = String.Equals(launch.Transport, "tcp", StringComparison.OrdinalIgnoreCase)
+                ? IpcBridgeConnection.ConnectTcp(launch.Host, launch.Port, launch.Token, 2500, out error)
+                : IpcBridgeConnection.Connect(launch.PipeName, launch.Token, 2500, out error);
             if (connection == null)
             {
                 if (generation == lifecycleGeneration)

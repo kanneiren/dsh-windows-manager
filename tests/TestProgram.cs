@@ -41,8 +41,10 @@ namespace DeepSeekHarnessManager.Tests
                 Run("runtime resolution", TestRuntimeResolution);
                 Run("runtime adapter registry", TestRuntimeAdapters);
                 Run("runtime bridge patch", TestRuntimeBridgePatch);
+                Run("wsl runtime bridge patch", TestWslRuntimeBridgePatch);
                 Run("frontend launcher", TestFrontendLauncher);
                 Run("bridge protocol", TestBridgeProtocol);
+                Run("tcp bridge connection", TestTcpBridgeConnection);
                 Run("log retention", TestLogRetention);
                 Run("npm update check", TestUpdateCheck);
                 Run("update rollback transaction", TestUpdateRollbackTransaction);
@@ -474,6 +476,22 @@ namespace DeepSeekHarnessManager.Tests
             Assert(yaml.IndexOf("profile:", StringComparison.Ordinal) >= 0, "patch does not record the launched profile");
         }
 
+        private static void TestWslRuntimeBridgePatch()
+        {
+            PluginCatalog catalog = PluginCatalog.Load();
+            PluginDefinition plugin = catalog.Get("deepseek-harness-web");
+            InstanceConfig instance = CreateInstance(plugin, 3080);
+            instance.RuntimeType = InstanceModel.RuntimeTypeWsl;
+            instance.WslDistro = "TestDistro";
+            RuntimeBridgeLaunch launch = RuntimeBridgePatch.Create(instance, plugin);
+            Assert(launch.Transport == "tcp", "wsl runtime bridge should use tcp transport");
+            Assert(launch.Port > 0 && launch.Port <= 65535, "wsl runtime bridge should reserve a loopback port");
+            Assert(launch.Host == "127.0.0.1", "wsl runtime bridge host should be loopback");
+            string yaml = File.ReadAllText(launch.PatchPath);
+            Assert(yaml.IndexOf("transport:", StringComparison.Ordinal) >= 0, "wsl patch should declare tcp transport");
+            Assert(yaml.IndexOf("pipeName:", StringComparison.Ordinal) < 0, "wsl patch must not declare a named pipe");
+        }
+
         private static void TestFrontendLauncher()
         {
             PluginCatalog catalog = PluginCatalog.Load();
@@ -507,6 +525,47 @@ namespace DeepSeekHarnessManager.Tests
 
             BridgeMessage rejection = BridgeProtocol.Deserialize("{\"protocolVersion\":1,\"ok\":false,\"error\":{\"code\":\"unauthorized\"}}");
             Assert(BridgeProtocol.ErrorCode(rejection) == "unauthorized", "bridge error code was not parsed");
+        }
+
+        private static void TestTcpBridgeConnection()
+        {
+            TcpListener listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            Task server = Task.Factory.StartNew(delegate
+            {
+                using (TcpClient client = listener.AcceptTcpClient())
+                using (NetworkStream stream = client.GetStream())
+                using (StreamReader reader = new StreamReader(stream, Encoding.UTF8, false, 4096, true))
+                using (StreamWriter writer = new StreamWriter(stream, new UTF8Encoding(false), 4096))
+                {
+                    writer.AutoFlush = true;
+                    writer.NewLine = "\n";
+                    BridgeMessage request = BridgeProtocol.Deserialize(reader.ReadLine());
+                    Dictionary<string, object> payload = new Dictionary<string, object>();
+                    payload["pong"] = true;
+                    BridgeMessage response = BridgeProtocol.Command(request.Type, request.Token, payload);
+                    response.MessageType = "response";
+                    response.RequestId = request.RequestId;
+                    response.Ok = true;
+                    writer.WriteLine(BridgeProtocol.Serialize(response));
+                }
+            });
+            try
+            {
+                string error;
+                using (IpcBridgeConnection connection = IpcBridgeConnection.ConnectTcp("127.0.0.1", port, "a".PadRight(64, 'a'), 2000, out error))
+                {
+                    Assert(connection != null, "TCP bridge connect failed: " + error);
+                    BridgeMessage response = connection.Request("ping", null, 1500);
+                    Assert(response != null && response.Ok, "TCP bridge ping failed");
+                }
+            }
+            finally
+            {
+                listener.Stop();
+                server.Wait(3000);
+            }
         }
 
         private static void TestLogRetention()
@@ -832,7 +891,7 @@ namespace DeepSeekHarnessManager.Tests
                 }
                 Assert(running != null && running.Kind == InstanceStateKind.Running, "real DSH did not become ready: " + ReadIfExists(error));
                 string shutdownError;
-                Assert(GracefulShutdownClient.Request(bridge.PipeName, bridge.Token, 3000, out shutdownError), "shutdown bridge failed: " + shutdownError);
+                Assert(GracefulShutdownClient.Request(bridge, 3000, out shutdownError), "shutdown bridge failed: " + shutdownError);
                 using (Process listener = Process.GetProcessById(running.ProcessId)) Assert(listener.WaitForExit(8000), "DSH did not exit after graceful request");
                 Assert(PortMap.GetListenerProcessIds(port).Count == 0, "port remained occupied after graceful shutdown");
 

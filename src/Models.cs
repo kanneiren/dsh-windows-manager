@@ -186,6 +186,9 @@ namespace DeepSeekHarnessManager
         public string Ownership { get; set; }
         public string RuntimeId { get; set; }
         public string PipeName { get; set; }
+        public string Transport { get; set; }
+        public string Host { get; set; }
+        public int BridgePort { get; set; }
         public string PipeToken { get; set; }
         public string PatchPath { get; set; }
         public string OutputLog { get; set; }

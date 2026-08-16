@@ -47,7 +47,7 @@ namespace DeepSeekHarnessManager
                     return Failure("DSH did not become ready within 90 seconds. " + ReadTail(errorLog));
 
                 string shutdownError;
-                if (!GracefulShutdownClient.Request(bridge == null ? null : bridge.PipeName, bridge == null ? null : bridge.Token, 3000, out shutdownError))
+                if (!GracefulShutdownClient.Request(bridge, 3000, out shutdownError))
                     return Failure("Compatibility startup passed, but graceful shutdown failed: " + shutdownError);
                 DateTime stopDeadline = DateTime.UtcNow.AddSeconds(10);
                 while (DateTime.UtcNow < stopDeadline && PortMap.GetListenerProcessIds(port).Count > 0) Thread.Sleep(200);

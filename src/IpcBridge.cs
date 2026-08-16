@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.IO.Pipes;
+using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -200,7 +201,9 @@ namespace DeepSeekHarnessManager
 
     public sealed class IpcBridgeConnection : IDisposable
     {
-        private readonly NamedPipeClientStream pipe;
+        private readonly Stream stream;
+        private readonly Func<bool> isConnected;
+        private readonly Action closeStream;
         private readonly StreamWriter writer;
         private readonly StreamReader reader;
         private readonly string token;
@@ -212,14 +215,16 @@ namespace DeepSeekHarnessManager
         private volatile bool disconnected;
         private string disconnectReason = String.Empty;
 
-        private IpcBridgeConnection(NamedPipeClientStream connectedPipe, string bridgeToken)
+        private IpcBridgeConnection(Stream connectedStream, Func<bool> connected, Action close, string bridgeToken)
         {
-            pipe = connectedPipe;
+            stream = connectedStream;
+            isConnected = connected;
+            closeStream = close;
             token = bridgeToken ?? String.Empty;
-            writer = new StreamWriter(pipe, new UTF8Encoding(false), 4096);
+            writer = new StreamWriter(stream, new UTF8Encoding(false), 4096);
             writer.AutoFlush = true;
             writer.NewLine = "\n";
-            reader = new StreamReader(pipe, Encoding.UTF8, false, 4096, true);
+            reader = new StreamReader(stream, Encoding.UTF8, false, 4096, true);
             readerTask = RunReaderLoop();
         }
 
@@ -231,7 +236,7 @@ namespace DeepSeekHarnessManager
             get
             {
                 if (closing || disconnected) return false;
-                try { return pipe.IsConnected; }
+                try { return isConnected == null || isConnected(); }
                 catch { return false; }
             }
         }
@@ -249,10 +254,44 @@ namespace DeepSeekHarnessManager
                 NamedPipeClientStream connectedPipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
                 connectedPipe.Connect(timeoutMilliseconds);
                 connectedPipe.ReadMode = PipeTransmissionMode.Byte;
-                return new IpcBridgeConnection(connectedPipe, bridgeToken);
+                return new IpcBridgeConnection(connectedPipe, delegate { return connectedPipe.IsConnected; }, delegate { connectedPipe.Dispose(); }, bridgeToken);
             }
             catch (Exception exception)
             {
+                error = exception.Message;
+                return null;
+            }
+        }
+
+        public static IpcBridgeConnection ConnectTcp(string host, int port, string bridgeToken, int timeoutMilliseconds, out string error)
+        {
+            error = String.Empty;
+            if (String.IsNullOrWhiteSpace(host) || port < 1 || port > 65535 || String.IsNullOrWhiteSpace(bridgeToken))
+            {
+                error = Localization.Text("Bridge.Unavailable");
+                return null;
+            }
+            TcpClient client = null;
+            try
+            {
+                client = new TcpClient();
+                IAsyncResult result = client.BeginConnect(host, port, null, null);
+                if (!result.AsyncWaitHandle.WaitOne(timeoutMilliseconds))
+                {
+                    client.Close();
+                    error = Localization.Text("Bridge.Timeout");
+                    return null;
+                }
+                client.EndConnect(result);
+                NetworkStream network = client.GetStream();
+                return new IpcBridgeConnection(network, delegate { return client.Connected; }, delegate { client.Close(); }, bridgeToken);
+            }
+            catch (Exception exception)
+            {
+                if (client != null)
+                {
+                    try { client.Close(); } catch { }
+                }
                 error = exception.Message;
                 return null;
             }
@@ -304,7 +343,11 @@ namespace DeepSeekHarnessManager
             closing = true;
             try { writer.Dispose(); } catch { }
             try { reader.Dispose(); } catch { }
-            try { pipe.Dispose(); } catch { }
+            if (closeStream != null)
+            {
+                try { closeStream(); } catch { }
+            }
+            try { stream.Dispose(); } catch { }
         }
 
         public void Dispose()

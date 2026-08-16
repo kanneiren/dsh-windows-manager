@@ -157,14 +157,21 @@ export async function apply(ctx, config = {}) {
   const exit = ctx.get('appExit')
   const pipeName = String(config.pipeName || process.env.DSH_WINDOWS_MANAGER_PIPE_NAME || '')
   const token = String(config.token || process.env.DSH_WINDOWS_MANAGER_TOKEN || '')
+  const transport = String(config.transport || (process.platform === 'win32' ? 'pipe' : 'unix')).toLowerCase()
+  const tcpPort = transport === 'tcp' ? Number(config.port) : 0
+  const tcpHost = String(config.host || '0.0.0.0')
+
+  if (transport === 'tcp' && (!Number.isInteger(tcpPort) || tcpPort < 1 || tcpPort > 65535)) {
+    throw new Error('dsh-windows-lifecycle: a valid TCP port is required for tcp transport')
+  }
 
   // When installed as a normal DSH bundle there is no per-launch pipe and
-  // token yet. Stay inert instead of opening an unauthenticated pipe.
-  if (pipeName === '' && token === '') return
+  // token yet. Stay inert instead of opening an unauthenticated endpoint.
+  if (transport !== 'tcp' && pipeName === '' && token === '') return
   if (typeof exit !== 'function') {
     throw new Error('dsh-windows-lifecycle: ctx.appExit is unavailable')
   }
-  if (!/^[A-Za-z0-9._-]{1,128}$/.test(pipeName)) {
+  if (transport !== 'tcp' && !/^[A-Za-z0-9._-]{1,128}$/.test(pipeName)) {
     throw new Error('dsh-windows-lifecycle: invalid pipeName')
   }
   if (!/^[a-f0-9]{64}$/.test(token)) {
@@ -172,7 +179,7 @@ export async function apply(ctx, config = {}) {
   }
 
   const pipePath = process.platform === 'win32'
-    ? `\\\\.\\pipe\\${pipeName}`
+    ? '\\\\.\\pipe\\' + pipeName
     : `${process.env.TMPDIR || '/tmp'}/${pipeName}.sock`
   let shutdownRequested = false
   let disposed = false
@@ -333,7 +340,11 @@ export async function apply(ctx, config = {}) {
     }
     server.once('error', onError)
     server.once('listening', onListening)
-    server.listen(pipePath)
+    if (transport === 'tcp') {
+      server.listen(tcpPort, tcpHost)
+    } else {
+      server.listen(pipePath)
+    }
   })
 
   scheduleReadinessCheck(0)
