@@ -42,6 +42,7 @@ namespace DeepSeekHarnessManager.Tests
                 Run("external unhealthy DSH preservation", TestExternalUnhealthyHarnessPreserved);
                 Run("windows DSH port detection", TestWindowsDshPortDetection);
                 Run("WSL port conflict inspection", TestWslPortConflictInspection);
+                Run("WSL path fallback", TestWslPathFallback);
                 Run("runtime resolution", TestRuntimeResolution);
                 Run("runtime adapter registry", TestRuntimeAdapters);
                 Run("runtime bridge patch", TestRuntimeBridgePatch);
@@ -511,6 +512,14 @@ namespace DeepSeekHarnessManager.Tests
                 listener.Stop();
                 server.Join(2000);
             }
+        }
+
+        private static void TestWslPathFallback()
+        {
+            string fallback = WslRuntimeAdapter.ConvertToWslPath("missing-distro-for-test", "C:\\workspace\\dsh");
+            Assert(fallback == "/mnt/c/workspace/dsh", "WSL path fallback should convert a Windows path to /mnt/c: " + fallback);
+            string unc = WslRuntimeAdapter.ConvertToWindowsPath("missing-distro-for-test", "/home/user/.dsh/settings.yaml");
+            Assert(unc.IndexOf("wsl.localhost", StringComparison.OrdinalIgnoreCase) >= 0 && unc.IndexOf("settings.yaml", StringComparison.OrdinalIgnoreCase) >= 0, "WSL UNC fallback should construct a wsl.localhost path: " + unc);
         }
 
         private static void TestRuntimeResolution()

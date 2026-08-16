@@ -23,6 +23,7 @@
 | Performance | Event-driven process and IPC monitoring for Manager-owned DSH; fallback WMI/HTTP probes only when the bridge is unavailable |
 | Languages | English, Simplified Chinese, and startup-time Windows language selection |
 | Tray optional | `TrayEnabled=false` keeps the same EXE running Core + Supervisor + Runtime Bridge + Manager Control API without a tray icon |
+| Tray layout | Top instance selector with state; common actions stay top-level; updates/diagnostics/logs are grouped in expandable submenus |
 | Status | Tray state, details dialog with IPC state/version/home, logs, and npm CLI JSON or text output |
 | Diagnostics | Copy diagnostics, separate Manager/DSH log actions, and `dsh-windows-manager diagnostics [--json]` |
 | Manager API | Local named-pipe Manager Control Protocol v1 (`getVersion`/`getStatus`/`listInstances`/`start`/`stop`/`restart`/`open`) for CLI and future frontends |

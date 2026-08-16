@@ -157,5 +157,7 @@
   "Diagnostics.DetectedWsl": "Detected {0} WSL DSH instance(s).",
   "Menu.DetectWindowsDsh": "Detect Windows DSH",
   "Diagnostics.DetectedWindows": "Detected {0} Windows DSH instance(s).",
-  "Menu.OpenOrStartWsl": "Start and open WSL DSH"
+  "Menu.OpenOrStartWsl": "Start and open WSL DSH",
+  "Menu.More": "More",
+  "Menu.ToolsAndLogs": "Tools & logs"
 }

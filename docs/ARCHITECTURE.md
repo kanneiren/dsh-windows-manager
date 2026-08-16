@@ -157,9 +157,11 @@ Discovery and launch are on demand only, never steady polling:
 
 ```text
 wsl.exe --list --quiet                 → distro list
-wsl.exe -d <distro> -- bash -lic ...   → DSH detection / PATH / nvm setup
-wsl.exe -d <distro> --cd <dir> -- bash -lic 'exec dsh ...' → launch
+wsl.exe -d <distro> -- <shell> ...     → DSH detection / PATH / nvm setup
+wsl.exe -d <distro> --cd <dir> -- <shell> 'exec dsh ...' → launch
 ```
+
+The adapter detects `bash` per distro and falls back to `sh -lc`. Path conversion prefers `wslpath` and falls back to `/mnt/<drive>` and `\\wsl.localhost\<distro>` construction, so non-Ubuntu distros do not require Ubuntu-specific tools.
 
 The WSL adapter keeps `exec` semantics so the Windows `wsl.exe` process lifetime mirrors DSH. The Windows `wsl.exe` process is the liveness handle; authoritative PID, port, version, and state come from the Runtime Bridge inside WSL. Linux PIDs are never guessed through WMI.
 

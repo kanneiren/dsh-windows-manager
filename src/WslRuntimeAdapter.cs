@@ -8,6 +8,9 @@ namespace DeepSeekHarnessManager
 {
     public sealed class WslRuntimeAdapter : IRuntimeAdapter
     {
+        private static readonly Dictionary<string, string> ShellByDistro = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        private static readonly object ShellSync = new object();
+
         public string RuntimeType { get { return InstanceModel.RuntimeTypeWsl; } }
 
         public RuntimeResolution Resolve(InstanceConfig instance, PluginDefinition plugin, int port, string patchPath)
@@ -58,8 +61,7 @@ namespace DeepSeekHarnessManager
             resolution.Arguments.Add("--cd");
             resolution.Arguments.Add(wslWorkingDirectory);
             resolution.Arguments.Add("--");
-            resolution.Arguments.Add("bash");
-            resolution.Arguments.Add("-lic");
+            AddShellArguments(resolution.Arguments, distro);
             resolution.Arguments.Add(shell);
             resolution.Version = version;
             resolution.Description = "WSL " + distro + " (" + kind + " via wsl.exe)";
@@ -205,9 +207,11 @@ namespace DeepSeekHarnessManager
         {
             try
             {
-                CommandResult result = CommandRunner.RunCapture(FindWslExe(),
-                    new string[] { "-d", distro, "--", "bash", "-lc", "printf %s \"$HOME\"" },
-                    AppPaths.AppDirectory, 5000);
+                List<string> homeArgs = new List<string>();
+                homeArgs.Add("-d"); homeArgs.Add(distro); homeArgs.Add("--");
+                AddShellArguments(homeArgs, distro);
+                homeArgs.Add("printf %s \"$HOME\"");
+                CommandResult result = CommandRunner.RunCapture(FindWslExe(), homeArgs, AppPaths.AppDirectory, 5000);
                 if (result.ExitCode == 0 && !String.IsNullOrWhiteSpace(result.StandardOutput))
                     return result.StandardOutput.Trim();
             }
@@ -231,7 +235,42 @@ namespace DeepSeekHarnessManager
             catch
             {
             }
-            return linuxPath;
+            return "\\\\wsl.localhost\\" + distro + linuxPath.Replace('/', '\\');
+        }
+
+        public static string ResolveShell(string distro)
+        {
+            lock (ShellSync)
+            {
+                string cached;
+                if (ShellByDistro.TryGetValue(distro, out cached) && !String.IsNullOrWhiteSpace(cached)) return cached;
+            }
+            string shell = "sh";
+            try
+            {
+                CommandResult result = CommandRunner.RunCapture(FindWslExe(),
+                    new string[] { "-d", distro, "--", "sh", "-lc", "command -v bash || echo sh" },
+                    AppPaths.AppDirectory, 5000);
+                if (result.ExitCode == 0 && !String.IsNullOrWhiteSpace(result.StandardOutput))
+                {
+                    string value = result.StandardOutput.Trim();
+                    int newline = value.IndexOfAny(new char[] { '\r', '\n' });
+                    if (newline >= 0) value = value.Substring(0, newline).Trim();
+                    if (value.IndexOf("bash", StringComparison.OrdinalIgnoreCase) >= 0) shell = "bash";
+                }
+            }
+            catch
+            {
+            }
+            lock (ShellSync) ShellByDistro[distro] = shell;
+            return shell;
+        }
+
+        private static void AddShellArguments(List<string> arguments, string distro)
+        {
+            string shell = ResolveShell(distro);
+            arguments.Add(shell);
+            arguments.Add(shell == "bash" ? "-lic" : "-lc");
         }
 
         public static string ConvertToWslPath(string distro, string windowsPath)
@@ -248,16 +287,33 @@ namespace DeepSeekHarnessManager
             catch
             {
             }
-            return windowsPath.Replace('\\', '/');
+            return ConvertWindowsToWslFallback(distro, windowsPath);
+        }
+
+        private static string ConvertWindowsToWslFallback(string distro, string windowsPath)
+        {
+            try
+            {
+                string normalized = (windowsPath ?? String.Empty).Replace('\\', '/');
+                string mountRoot = "/mnt/" + Char.ToLowerInvariant(normalized[0]);
+                if (normalized.Length > 1 && normalized[1] == ':') normalized = normalized.Substring(2).TrimStart('/');
+                return mountRoot + "/" + normalized;
+            }
+            catch
+            {
+                return (windowsPath ?? String.Empty).Replace('\\', '/');
+            }
         }
 
         private static string ResolveGlobalVersion(string distro)
         {
             try
             {
-                CommandResult result = CommandRunner.RunCapture(FindWslExe(),
-                    new string[] { "-d", distro, "--", "bash", "-lic", "dsh --version" },
-                    String.Empty, 10000);
+                List<string> versionArgs = new List<string>();
+                versionArgs.Add("-d"); versionArgs.Add(distro); versionArgs.Add("--");
+                AddShellArguments(versionArgs, distro);
+                versionArgs.Add("dsh --version");
+                CommandResult result = CommandRunner.RunCapture(FindWslExe(), versionArgs, AppPaths.AppDirectory, 10000);
                 if (result.ExitCode == 0)
                 {
                     string version = (result.StandardOutput ?? String.Empty).Trim();
@@ -353,8 +409,7 @@ namespace DeepSeekHarnessManager
             wslArgs.Add("--cd");
             wslArgs.Add(ConvertToWslPath(distro, workingDirectory));
             wslArgs.Add("--");
-            wslArgs.Add("bash");
-            wslArgs.Add("-lic");
+            AddShellArguments(wslArgs, distro);
             wslArgs.Add(shell.ToString());
             return CommandRunner.RunCapture(FindWslExe(), wslArgs, workingDirectory, timeoutMilliseconds);
         }

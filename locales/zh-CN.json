@@ -157,5 +157,7 @@
   "Diagnostics.DetectedWsl": "检测到 {0} 个 WSL DSH 实例。",
   "Menu.DetectWindowsDsh": "检测 Windows 中的 DSH",
   "Diagnostics.DetectedWindows": "检测到 {0} 个 Windows DSH 实例。",
-  "Menu.OpenOrStartWsl": "启动并打开 WSL DSH"
+  "Menu.OpenOrStartWsl": "启动并打开 WSL DSH",
+  "Menu.More": "更多",
+  "Menu.ToolsAndLogs": "工具与日志"
 }

@@ -119,6 +119,7 @@ namespace DeepSeekHarnessManager
             if (selected != null) BuildInstanceMenu(menu.Items, selected);
 
             menu.Items.Add(new ToolStripSeparator());
+            ToolStripMenuItem tools = new ToolStripMenuItem(Localization.Text("Menu.ToolsAndLogs"));
             string marketplaceUrl = null;
             foreach (InstanceSnapshot instance in snapshot.Instances)
             {
@@ -133,21 +134,20 @@ namespace DeepSeekHarnessManager
                 string url = marketplaceUrl;
                 ToolStripMenuItem marketplace = new ToolStripMenuItem(Localization.Text("Menu.PluginMarketplace"));
                 marketplace.Click += delegate { manager.OpenUrl(url); };
-                menu.Items.Add(marketplace);
+                tools.DropDownItems.Add(marketplace);
             }
-
             ToolStripMenuItem openManagerConfig = new ToolStripMenuItem(Localization.Text("Menu.OpenManagerConfig"));
             openManagerConfig.Click += delegate { manager.OpenConfiguration(); };
-            menu.Items.Add(openManagerConfig);
+            tools.DropDownItems.Add(openManagerConfig);
             ToolStripMenuItem copyDiagnostics = new ToolStripMenuItem(Localization.Text("Menu.CopyDiagnostics"));
             copyDiagnostics.Click += delegate { CopyDiagnostics(); };
-            menu.Items.Add(copyDiagnostics);
+            tools.DropDownItems.Add(copyDiagnostics);
             ToolStripMenuItem openManagerLogs = new ToolStripMenuItem(Localization.Text("Menu.OpenManagerLogs"));
             openManagerLogs.Click += delegate { manager.OpenManagerLogs(); };
-            menu.Items.Add(openManagerLogs);
+            tools.DropDownItems.Add(openManagerLogs);
             ToolStripMenuItem openDshLogs = new ToolStripMenuItem(Localization.Text("Menu.OpenDshLogs"));
             openDshLogs.Click += delegate { manager.OpenDshLogs(selectedInstanceId); };
-            menu.Items.Add(openDshLogs);
+            tools.DropDownItems.Add(openDshLogs);
             ToolStripMenuItem language = new ToolStripMenuItem(Localization.Text("Menu.Language"));
             ToolStripMenuItem autoLanguage = new ToolStripMenuItem(Localization.Text("Language.Auto"));
             ToolStripMenuItem chinese = new ToolStripMenuItem(Localization.Text("Language.Chinese"));
@@ -161,14 +161,15 @@ namespace DeepSeekHarnessManager
             language.DropDownItems.Add(autoLanguage);
             language.DropDownItems.Add(chinese);
             language.DropDownItems.Add(english);
-            menu.Items.Add(language);
+            tools.DropDownItems.Add(language);
             ToolStripMenuItem about = new ToolStripMenuItem(Localization.Text("Menu.About"));
             about.Click += delegate
             {
                 MessageBox.Show(Localization.Format("About.Body", Application.ProductVersion),
                     Localization.Text("App.Title"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             };
-            menu.Items.Add(about);
+            tools.DropDownItems.Add(about);
+            menu.Items.Add(tools);
             menu.Items.Add(new ToolStripSeparator());
             ToolStripMenuItem exit = new ToolStripMenuItem(Localization.Text("Menu.Exit"));
             exit.Click += delegate { ExitThread(); };
@@ -207,7 +208,9 @@ namespace DeepSeekHarnessManager
         private string SelectedInstanceTitle(ManagerSnapshot snapshot)
         {
             InstanceSnapshot selected = FindSelectedInstance(snapshot);
-            return selected == null ? Localization.Text("State.Unknown") : InstanceTitle(selected);
+            return selected == null
+                ? Localization.Text("State.Unknown")
+                : InstanceTitle(selected) + " - " + LocalizedStateName(selected.State);
         }
 
         private void RebuildMenu()
@@ -225,53 +228,51 @@ namespace DeepSeekHarnessManager
         {
             string instanceId = instance.Id;
             InstanceMenuBinding binding = new InstanceMenuBinding();
-            binding.Status = new ToolStripMenuItem(Localization.Text("Menu.Status") + ": " + Localization.Text("Menu.Checking"));
-            binding.Status.Enabled = false;
-            binding.Version = new ToolStripMenuItem(Localization.Text("Menu.Version") + ": " + Localization.Text("Menu.Checking"));
-            binding.Version.Enabled = false;
             binding.Open = new ToolStripMenuItem(LocalizedFrontendMenu(instance));
             binding.Start = new ToolStripMenuItem(Localization.Text("Menu.Start"));
             binding.Stop = new ToolStripMenuItem(Localization.Text("Menu.Stop"));
             binding.Restart = new ToolStripMenuItem(Localization.Text("Menu.Restart"));
+            binding.Open.Click += delegate { manager.Open(instanceId); };
+            binding.Start.Click += delegate { manager.Start(instanceId); };
+            binding.Stop.Click += delegate { manager.Stop(instanceId, true); };
+            binding.Restart.Click += delegate { manager.Restart(instanceId); };
+
+            items.Add(binding.Open);
+            items.Add(binding.Start);
+            items.Add(binding.Stop);
+            items.Add(binding.Restart);
+
+            ToolStripMenuItem more = new ToolStripMenuItem(Localization.Text("Menu.More"));
+            binding.Version = new ToolStripMenuItem(Localization.Text("Menu.Version") + ": " + Localization.Text("Menu.Checking"));
+            binding.Version.Enabled = false;
             binding.CheckUpdate = new ToolStripMenuItem(Localization.Text("Menu.CheckUpdate"));
             binding.UpdateNow = new ToolStripMenuItem(Localization.Text("Menu.InstallUpdate"));
             binding.Details = new ToolStripMenuItem(Localization.Text("Menu.Details"));
             binding.Workspace = new ToolStripMenuItem(Localization.Text("Menu.Workspace"));
             ToolStripMenuItem dshSettings = new ToolStripMenuItem(Localization.Text("Menu.OpenDshSettings"));
-
-            binding.Open.Click += delegate { manager.Open(instanceId); };
-            binding.Start.Click += delegate { manager.Start(instanceId); };
-            binding.Stop.Click += delegate { manager.Stop(instanceId, true); };
-            binding.Restart.Click += delegate { manager.Restart(instanceId); };
             binding.CheckUpdate.Click += delegate { CheckUpdateAsync(instanceId, true, true); };
             binding.UpdateNow.Click += delegate { manager.InstallUpdate(instanceId); RefreshUi(); };
             binding.Details.Click += delegate { MessageBox.Show(manager.GetInstanceDetails(instanceId), Localization.Text("Details.Title"), MessageBoxButtons.OK, MessageBoxIcon.Information); };
             binding.Workspace.Click += delegate { manager.OpenInstanceWorkspace(instanceId); };
             dshSettings.Click += delegate { manager.OpenDshSettings(instanceId); };
-
-            items.Add(binding.Status);
-            items.Add(binding.Version);
-            items.Add(new ToolStripSeparator());
-            items.Add(binding.Open);
-            items.Add(binding.Start);
-            items.Add(binding.Stop);
-            items.Add(binding.Restart);
-            items.Add(new ToolStripSeparator());
-            items.Add(binding.CheckUpdate);
-            items.Add(binding.UpdateNow);
-            items.Add(new ToolStripSeparator());
-            items.Add(binding.Details);
-            items.Add(binding.Workspace);
-            items.Add(dshSettings);
+            more.DropDownItems.Add(binding.Version);
+            more.DropDownItems.Add(binding.CheckUpdate);
+            more.DropDownItems.Add(binding.UpdateNow);
+            more.DropDownItems.Add(new ToolStripSeparator());
+            more.DropDownItems.Add(binding.Details);
+            more.DropDownItems.Add(binding.Workspace);
+            more.DropDownItems.Add(dshSettings);
             if (instance.IsDetected)
             {
                 ToolStripMenuItem saveDetected = new ToolStripMenuItem(Localization.Text("Menu.SaveDetectedInstance"));
                 saveDetected.Click += delegate { manager.SaveDetectedInstance(instanceId); };
-                items.Add(saveDetected);
+                more.DropDownItems.Add(saveDetected);
                 ToolStripMenuItem removeDetected = new ToolStripMenuItem(Localization.Text("Menu.RemoveDetectedInstance"));
                 removeDetected.Click += delegate { manager.RemoveDetectedInstance(instanceId); };
-                items.Add(removeDetected);
+                more.DropDownItems.Add(removeDetected);
             }
+            items.Add(new ToolStripSeparator());
+            items.Add(more);
             menuBindings.Add(instanceId, binding);
         }
 
@@ -472,7 +473,6 @@ namespace DeepSeekHarnessManager
             if (selected != null && menuBindings.ContainsKey(selected.Id))
             {
                 InstanceMenuBinding binding = menuBindings[selected.Id];
-                binding.Status.Text = Localization.Text("Menu.Status") + ": " + LocalizedState(selected);
                 string installed = String.IsNullOrWhiteSpace(selected.InstalledVersion) ? Localization.Text("Version.Unknown") : selected.InstalledVersion;
                 if (selected.UpdateAvailable)
                     binding.Version.Text = Localization.Text("Menu.Version") + ": " + installed + " (" + Localization.Format("Version.Update", selected.LatestVersion) + ")";
