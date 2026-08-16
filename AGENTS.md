@@ -39,7 +39,8 @@ Do not describe the manager package as the DSH runtime. They are separate packag
 - Keep `Language = auto` as a startup-time `CurrentUICulture` check, not a continuous watcher.
 - Keep source compatible with C# 5 and .NET Framework 4.8.
 - Keep the npm CLI dependency-free unless a dependency has a concrete, reviewed benefit.
-- Do not publish to GitHub or npm, create releases, or commit changes unless the user explicitly requests it.
+- Commit working changes to git after each verified step (build and tests pass) so problems can be rolled back. Keep commits small and descriptive.
+- Do not push to the remote, publish to GitHub or npm, or create releases unless the user explicitly requests it.
 
 ## File Map
 
