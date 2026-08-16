@@ -89,6 +89,7 @@ namespace DeepSeekHarnessManager
                 {
                     selectedInstanceId = instanceId;
                     RebuildMenu();
+                    try { menu.Show(Cursor.Position); } catch { }
                 };
                 instanceSelector.DropDownItems.Add(item);
             }
