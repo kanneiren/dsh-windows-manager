@@ -35,6 +35,7 @@
     "scripts/Install.ps1",
     "scripts/Uninstall.ps1",
     "docs/",
+    "CHANGELOG.md",
     "AGENTS.md",
     "CONTRIBUTING.md",
     "CONTRIBUTING.en.md",

@@ -23,7 +23,7 @@ $common = @('/nologo','/noconfig','/langversion:5','/platform:anycpu','/optimize
 if ($LASTEXITCODE -ne 0) { throw "Application compilation failed with exit code $LASTEXITCODE." }
 
 Copy-Item -LiteralPath (Join-Path $projectRoot 'DeepSeekHarnessManager.exe.config') -Destination (Join-Path $dist 'DeepSeekHarnessManager.exe.config') -Force
-foreach ($document in @('README.md', 'README.en.md', 'config.example.json', 'THIRD_PARTY_NOTICES.md', 'LICENSE', 'SECURITY.md', 'SECURITY.en.md', 'CONTRIBUTING.md', 'CONTRIBUTING.en.md', 'AGENTS.md')) {
+foreach ($document in @('README.md', 'README.en.md', 'config.example.json', 'THIRD_PARTY_NOTICES.md', 'LICENSE', 'SECURITY.md', 'SECURITY.en.md', 'CONTRIBUTING.md', 'CONTRIBUTING.en.md', 'AGENTS.md', 'CHANGELOG.md')) {
     Copy-Item -LiteralPath (Join-Path $projectRoot $document) -Destination (Join-Path $dist $document) -Force
 }
 $distAssets = Join-Path $dist 'assets'

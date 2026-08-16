@@ -18,6 +18,7 @@ const required = [
   'dist/CONTRIBUTING.md',
   'dist/CONTRIBUTING.en.md',
   'dist/AGENTS.md',
+  'dist/CHANGELOG.md',
   'dist/docs/ARCHITECTURE.md',
   'dist/docs/FEATURES.md',
   'dist/docs/TROUBLESHOOTING.md',
