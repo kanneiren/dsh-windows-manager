@@ -969,7 +969,11 @@ namespace DeepSeekHarnessManager.Tests
                     probe.RuntimeType = InstanceModel.RuntimeTypeWsl;
                     probe.WslDistro = candidate;
                     WslRuntimeAdapter probeAdapter = new WslRuntimeAdapter();
-                    if (!String.IsNullOrWhiteSpace(probeAdapter.Resolve(probe, PluginCatalog.Load().Get("deepseek-harness-web"), 3080, String.Empty).Version)) { distro = candidate; break; }
+                    if (!String.IsNullOrWhiteSpace(probeAdapter.Resolve(probe, PluginCatalog.Load().Get("deepseek-harness-web"), 3080, String.Empty).Version))
+                    {
+                        string convertedWorkspace = WslRuntimeAdapter.ConvertToWslPath(candidate, AppPaths.DataDirectory);
+                        if (convertedWorkspace.StartsWith("/", StringComparison.Ordinal)) { distro = candidate; break; }
+                    }
                 }
                 catch { }
             }
@@ -987,6 +991,8 @@ namespace DeepSeekHarnessManager.Tests
             WslRuntimeAdapter adapter = new WslRuntimeAdapter();
             CommandResult node = adapter.RunCommand(instance, "node", new string[] { "--version" }, instance.Workspace, 10000);
             Assert(node.ExitCode == 0 && !String.IsNullOrWhiteSpace(node.StandardOutput), "wsl adapter should run commands inside the configured distro");
+            string windowsSettingsPath = WslRuntimeAdapter.ConvertToWindowsPath(distro, WslRuntimeAdapter.ResolveLinuxHome(distro) + "/.dsh/settings.yaml");
+            Assert(windowsSettingsPath.IndexOf("wsl", StringComparison.OrdinalIgnoreCase) >= 0 && windowsSettingsPath.IndexOf("settings.yaml", StringComparison.OrdinalIgnoreCase) >= 0, "wsl settings path should convert to a Windows-accessible UNC path: " + windowsSettingsPath);
 
             RuntimeBridgeLaunch bridge = RuntimeBridgePatch.Create(instance, plugin);
             RuntimeResolution runtime = adapter.Resolve(instance, plugin, instance.PreferredPort, bridge.PatchPath);

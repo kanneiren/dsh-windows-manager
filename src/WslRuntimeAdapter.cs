@@ -186,6 +186,39 @@ namespace DeepSeekHarnessManager
             return command.ToString();
         }
 
+        public static string ResolveLinuxHome(string distro)
+        {
+            try
+            {
+                CommandResult result = CommandRunner.RunCapture(FindWslExe(),
+                    new string[] { "-d", distro, "--", "bash", "-lc", "printf %s \"$HOME\"" },
+                    AppPaths.AppDirectory, 5000);
+                if (result.ExitCode == 0 && !String.IsNullOrWhiteSpace(result.StandardOutput))
+                    return result.StandardOutput.Trim();
+            }
+            catch
+            {
+            }
+            return "~";
+        }
+
+        public static string ConvertToWindowsPath(string distro, string linuxPath)
+        {
+            if (String.IsNullOrWhiteSpace(linuxPath)) return String.Empty;
+            try
+            {
+                CommandResult result = CommandRunner.RunCapture(FindWslExe(),
+                    new string[] { "-d", distro, "--", "wslpath", "-w", linuxPath },
+                    AppPaths.AppDirectory, 5000);
+                if (result.ExitCode == 0 && !String.IsNullOrWhiteSpace(result.StandardOutput))
+                    return result.StandardOutput.Trim();
+            }
+            catch
+            {
+            }
+            return linuxPath;
+        }
+
         public static string ConvertToWslPath(string distro, string windowsPath)
         {
             if (String.IsNullOrWhiteSpace(windowsPath)) return "~";

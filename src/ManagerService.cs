@@ -508,7 +508,51 @@ namespace DeepSeekHarnessManager
 
         public void OpenDshSettings(string instanceId)
         {
-            OpenFolder(Path.GetDirectoryName(AppPaths.DshSettingsFile(GetController(instanceId).Config)));
+            InstanceController controller = GetController(instanceId);
+            if (String.Equals(controller.Config.RuntimeType, InstanceModel.RuntimeTypeWsl, StringComparison.OrdinalIgnoreCase))
+            {
+                string windowsDirectory = ResolveWslSettingsDirectory(controller);
+                if (!String.IsNullOrWhiteSpace(windowsDirectory)) OpenFolder(windowsDirectory);
+                return;
+            }
+            OpenFolder(Path.GetDirectoryName(AppPaths.DshSettingsFile(controller.Config)));
+        }
+
+        private static string ResolveWslSettingsDirectory(InstanceController controller)
+        {
+            string distro = controller.Config.WslDistro ?? String.Empty;
+            if (String.IsNullOrWhiteSpace(distro)) return String.Empty;
+            string linuxHome = null;
+            if (controller.BridgeRuntime != null && !String.IsNullOrWhiteSpace(controller.BridgeRuntime.DshHome))
+                linuxHome = controller.BridgeRuntime.DshHome;
+            if (String.IsNullOrWhiteSpace(linuxHome))
+            {
+                string configured = controller.Config.DshHome ?? String.Empty;
+                if (!String.IsNullOrWhiteSpace(configured))
+                {
+                    if (configured.StartsWith("~", StringComparison.Ordinal))
+                    {
+                        string home = WslRuntimeAdapter.ResolveLinuxHome(distro);
+                        linuxHome = configured == "~" ? home : home + configured.Substring(1);
+                    }
+                    else if (configured.IndexOf(':') == 1 || configured.StartsWith("\\", StringComparison.Ordinal))
+                    {
+                        linuxHome = WslRuntimeAdapter.ConvertToWslPath(distro, configured);
+                    }
+                    else
+                    {
+                        linuxHome = configured;
+                    }
+                }
+            }
+            if (String.IsNullOrWhiteSpace(linuxHome))
+            {
+                string home = WslRuntimeAdapter.ResolveLinuxHome(distro);
+                linuxHome = home + "/.dsh";
+            }
+            string linuxSettingsPath = linuxHome.TrimEnd('/') + "/settings.yaml";
+            string windowsSettingsPath = WslRuntimeAdapter.ConvertToWindowsPath(distro, linuxSettingsPath);
+            return String.IsNullOrWhiteSpace(windowsSettingsPath) ? String.Empty : Path.GetDirectoryName(windowsSettingsPath);
         }
 
         public void OpenUrl(string url)
