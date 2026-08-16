@@ -174,8 +174,10 @@ Config additions planned:
 
 ```text
 RuntimeType = wsl
-WslDistro   = Ubuntu-24.04
+WslDistro   = <distro selected from wsl.exe --list --quiet>
 ```
+
+The distro is always user-selected/configured. The Manager never assumes Ubuntu or any fixed distribution name.
 
 Workspace path conversion uses `wsl.exe wslpath`. Diagnostics report `runtimeType=wsl`, the Linux DSH PID from the bridge, and the Windows `wsl.exe` handle PID.
 
