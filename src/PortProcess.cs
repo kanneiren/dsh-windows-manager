@@ -20,10 +20,17 @@ namespace DeepSeekHarnessManager
 
         public static IList<int> GetListenerProcessIds(int port)
         {
-            HashSet<int> processIds = new HashSet<int>();
-            ReadTable(AfInet, port, processIds);
-            ReadTable(AfInet6, port, processIds);
-            return new List<int>(processIds);
+            Dictionary<int, int> owners = ReadOwners(port);
+            return new List<int>(owners.Values);
+        }
+
+        public static IList<PortOwner> GetAllListenerOwners()
+        {
+            Dictionary<int, int> owners = ReadOwners(-1);
+            List<PortOwner> result = new List<PortOwner>();
+            foreach (KeyValuePair<int, int> entry in owners)
+                result.Add(new PortOwner { Port = entry.Key, ProcessId = entry.Value });
+            return result;
         }
 
         public static int GetPreferredListenerProcessId(int port)
@@ -33,7 +40,15 @@ namespace DeepSeekHarnessManager
             return values[0];
         }
 
-        private static void ReadTable(int addressFamily, int targetPort, HashSet<int> result)
+        private static Dictionary<int, int> ReadOwners(int targetPort)
+        {
+            Dictionary<int, int> owners = new Dictionary<int, int>();
+            ReadTable(AfInet, targetPort, owners);
+            ReadTable(AfInet6, targetPort, owners);
+            return owners;
+        }
+
+        private static void ReadTable(int addressFamily, int targetPort, Dictionary<int, int> owners)
         {
             int size = 0;
             uint status = GetExtendedTcpTable(IntPtr.Zero, ref size, false, addressFamily, TcpTableOwnerPidListener, 0);
@@ -66,9 +81,9 @@ namespace DeepSeekHarnessManager
                     int rawPort = Marshal.ReadInt32(row, portOffset);
                     byte[] bytes = BitConverter.GetBytes(rawPort);
                     int localPort = (bytes[0] << 8) + bytes[1];
-                    if (localPort != targetPort) continue;
+                    if (targetPort >= 0 && localPort != targetPort) continue;
                     int processId = Marshal.ReadInt32(row, processOffset);
-                    if (processId > 0) result.Add(processId);
+                    if (processId > 0 && !owners.ContainsKey(localPort)) owners[localPort] = processId;
                 }
             }
             catch (Exception exception)

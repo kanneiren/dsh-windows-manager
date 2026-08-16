@@ -29,6 +29,7 @@ namespace DeepSeekHarnessManager.Tests
                 Run("configuration round trip", TestConfiguration);
                 Run("manager service facade", TestManagerServiceFacade);
                 Run("detected WSL instance registration", TestDetectedWslInstanceRegistration);
+                Run("detected Windows instance registration", TestDetectedWindowsInstanceRegistration);
                 Run("manager interaction routing", TestManagerInteractionRouting);
                 Run("manager control protocol", TestManagerControlProtocol);
                 Run("DSH settings path", TestDshSettingsPath);
@@ -39,6 +40,7 @@ namespace DeepSeekHarnessManager.Tests
                 Run("port map IPv6", TestPortMapIpv6);
                 Run("HTTP and process fingerprints", TestInspection);
                 Run("external unhealthy DSH preservation", TestExternalUnhealthyHarnessPreserved);
+                Run("windows DSH port detection", TestWindowsDshPortDetection);
                 Run("runtime resolution", TestRuntimeResolution);
                 Run("runtime adapter registry", TestRuntimeAdapters);
                 Run("runtime bridge patch", TestRuntimeBridgePatch);
@@ -203,6 +205,25 @@ namespace DeepSeekHarnessManager.Tests
             }
         }
 
+        private static void TestDetectedWindowsInstanceRegistration()
+        {
+            PluginCatalog catalog = PluginCatalog.Load();
+            ConfigurationStore store = new ConfigurationStore(catalog);
+            ManagerConfig config = store.LoadOrCreate();
+            using (ManagerService service = new ManagerService(config, catalog, store, SilentManagerInteraction.Instance))
+            {
+                WindowsRunningInstance detected = new WindowsRunningInstance();
+                detected.Pid = 23456;
+                detected.Port = 4099;
+                detected.CommandLine = "node @deepseek-ai/dsh web";
+                service.RegisterDetectedWindowsInstance(detected);
+                ManagerSnapshot snapshot = service.GetSnapshot();
+                Assert(snapshot.Instances.Count == 2, "detected Windows instance should appear in the snapshot");
+                Assert(snapshot.Instances[1].RuntimeType == InstanceModel.RuntimeTypeWindows, "detected Windows instance runtime type mismatch");
+                Assert(snapshot.Instances[1].IsDetected, "detected Windows instance should be dynamic");
+            }
+        }
+
         private static void TestManagerInteractionRouting()
         {
             PluginCatalog catalog = PluginCatalog.Load();
@@ -337,6 +358,10 @@ namespace DeepSeekHarnessManager.Tests
                 int port = ((IPEndPoint)listener.LocalEndpoint).Port;
                 IList<int> owners = PortMap.GetListenerProcessIds(port);
                 Assert(owners.Contains(Process.GetCurrentProcess().Id), "listener owner PID was not found");
+                bool ownerFound = false;
+                foreach (PortOwner owner in PortMap.GetAllListenerOwners())
+                    if (owner.Port == port && owner.ProcessId == Process.GetCurrentProcess().Id) ownerFound = true;
+                Assert(ownerFound, "all-listener enumeration did not include the test listener");
             }
             finally { listener.Stop(); }
         }
@@ -408,6 +433,42 @@ namespace DeepSeekHarnessManager.Tests
                 Assert(inspection.Kind == InstanceStateKind.Conflict, "unknown listener should be a conflict");
             }
             finally { unknown.Stop(); }
+        }
+
+        private static void TestWindowsDshPortDetection()
+        {
+            string node = AppPaths.FindOnPath("node.exe");
+            Assert(!String.IsNullOrWhiteSpace(node), "node.exe is required for the Windows detection test");
+            int port = ReserveFreePort();
+            string scriptDirectory = Path.Combine(AppPaths.DataDirectory, "windows-detect", "@deepseek-ai", "dsh", "lib");
+            Directory.CreateDirectory(scriptDirectory);
+            string scriptPath = Path.Combine(scriptDirectory, "bin.js");
+            File.WriteAllText(scriptPath, "const http=require('http');const port=Number(process.argv[3]);http.createServer((req,res)=>{res.writeHead(200,{'Content-Type':'text/html'});res.end('<html><title>DeepSeek Harness</title><script>window.__DSH_BOOT__={}</script></html>')}).listen(port,'127.0.0.1');", Encoding.UTF8);
+            ProcessStartInfo startInfo = new ProcessStartInfo();
+            startInfo.FileName = node;
+            startInfo.Arguments = "\"" + scriptPath + "\" web " + port;
+            startInfo.UseShellExecute = false;
+            startInfo.CreateNoWindow = true;
+            using (Process process = Process.Start(startInfo))
+            {
+                try
+                {
+                    DateTime deadline = DateTime.UtcNow.AddSeconds(10);
+                    while (DateTime.UtcNow < deadline && PortMap.GetPreferredListenerProcessId(port) == 0) Thread.Sleep(100);
+                    PluginCatalog catalog = PluginCatalog.Load();
+                    PluginDefinition plugin = catalog.Get("deepseek-harness-web");
+                    WindowsRuntimeAdapter adapter = new WindowsRuntimeAdapter();
+                    bool found = false;
+                    foreach (WindowsRunningInstance item in adapter.DetectRunning(plugin))
+                        if (item.Port == port && item.Pid == process.Id) { found = true; break; }
+                    Assert(found, "windows detector should find a healthy DSH port");
+                }
+                finally
+                {
+                    try { if (!process.HasExited) process.Kill(); } catch { }
+                    try { process.WaitForExit(3000); } catch { }
+                }
+            }
         }
 
         private static void TestRuntimeResolution()

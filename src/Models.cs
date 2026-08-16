@@ -196,6 +196,21 @@ namespace DeepSeekHarnessManager
         public string UpdatedAt { get; set; }
     }
 
+    public sealed class PortOwner
+    {
+        public int Port { get; set; }
+        public int ProcessId { get; set; }
+    }
+
+    public sealed class WindowsRunningInstance
+    {
+        public int Pid { get; set; }
+        public int Port { get; set; }
+        public string CommandLine { get; set; }
+        public string ImagePath { get; set; }
+        public DateTime? StartTimeUtc { get; set; }
+    }
+
     public sealed class WslRunningInstance
     {
         public string Distro { get; set; }

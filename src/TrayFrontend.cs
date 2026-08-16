@@ -23,6 +23,7 @@ namespace DeepSeekHarnessManager
         private string lastUiSignature;
         private string lastMenuSignature;
         private ToolStripMenuItem instanceSelector;
+        private ToolStripMenuItem detectWindowsItem;
         private ToolStripMenuItem detectWslItem;
 
         public TrayFrontend(IManagerService managerService, string action)
@@ -96,6 +97,9 @@ namespace DeepSeekHarnessManager
             menu.Items.Add(instanceSelector);
             menu.Items.Add(new ToolStripSeparator());
 
+            detectWindowsItem = new ToolStripMenuItem(Localization.Text("Menu.DetectWindowsDsh"));
+            detectWindowsItem.Click += delegate { DetectWindowsDshAsync(); };
+            menu.Items.Add(detectWindowsItem);
             detectWslItem = new ToolStripMenuItem(Localization.Text("Menu.DetectWslDsh"));
             detectWslItem.Click += delegate { DetectWslDshAsync(); };
             menu.Items.Add(detectWslItem);
@@ -259,6 +263,42 @@ namespace DeepSeekHarnessManager
                 items.Add(removeDetected);
             }
             menuBindings.Add(instanceId, binding);
+        }
+
+        private async void DetectWindowsDshAsync()
+        {
+            if (detectWindowsItem == null) return;
+            detectWindowsItem.Enabled = false;
+            try
+            {
+                System.Collections.Generic.List<WindowsRunningInstance> detected = await Task.Run(delegate { return manager.DetectWindowsDsh(); });
+                int registered = 0;
+                if (detected != null)
+                {
+                    foreach (WindowsRunningInstance item in detected)
+                    {
+                        manager.RegisterDetectedWindowsInstance(item);
+                        registered++;
+                    }
+                }
+                notifyIcon.BalloonTipTitle = Localization.Text("App.Title");
+                notifyIcon.BalloonTipText = registered == 0
+                    ? Localization.Text("Diagnostics.None")
+                    : Localization.Format("Diagnostics.DetectedWindows", registered);
+                notifyIcon.BalloonTipIcon = registered == 0 ? ToolTipIcon.Warning : ToolTipIcon.Info;
+                notifyIcon.ShowBalloonTip(4000);
+            }
+            catch (Exception exception)
+            {
+                FileLog.Error(exception);
+                MessageBox.Show(Localization.Format("Update.CheckFailed", exception.Message),
+                    Localization.Text("App.Title"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            finally
+            {
+                if (detectWindowsItem != null) detectWindowsItem.Enabled = true;
+                RebuildMenu();
+            }
         }
 
         private async void DetectWslDshAsync()

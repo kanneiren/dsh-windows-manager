@@ -82,7 +82,9 @@ namespace DeepSeekHarnessManager
         string GetInstanceDetails(string instanceId);
         string GetDiagnosticsText();
         List<WslRunningInstance> DetectWslDsh();
+        List<WindowsRunningInstance> DetectWindowsDsh();
         void RegisterDetectedWslInstance(WslRunningInstance item);
+        void RegisterDetectedWindowsInstance(WindowsRunningInstance item);
         void RemoveDetectedInstance(string instanceId);
         void SaveDetectedInstance(string instanceId);
         void OpenConfiguration();
@@ -298,6 +300,18 @@ namespace DeepSeekHarnessManager
             return GetController(instanceId).GetDetails();
         }
 
+        public List<WindowsRunningInstance> DetectWindowsDsh()
+        {
+            List<WindowsRunningInstance> result = new List<WindowsRunningInstance>();
+            WindowsRuntimeAdapter adapter = new WindowsRuntimeAdapter();
+            foreach (PluginDefinition plugin in catalog.All)
+            {
+                List<WindowsRunningInstance> detected = adapter.DetectRunning(plugin);
+                foreach (WindowsRunningInstance item in detected) result.Add(item);
+            }
+            return result;
+        }
+
         public List<WslRunningInstance> DetectWslDsh()
         {
             List<WslRunningInstance> result = new List<WslRunningInstance>();
@@ -321,6 +335,44 @@ namespace DeepSeekHarnessManager
                 foreach (WslRunningInstance item in detected) result.Add(item);
             }
             return result;
+        }
+
+        public void RegisterDetectedWindowsInstance(WindowsRunningInstance item)
+        {
+            if (item == null || item.Pid <= 0 || item.Port <= 0) return;
+            foreach (InstanceController existingController in controllers)
+            {
+                if (String.Equals(existingController.Config.RuntimeType, InstanceModel.RuntimeTypeWindows, StringComparison.OrdinalIgnoreCase) &&
+                    existingController.Config.PreferredPort == item.Port)
+                {
+                    existingController.AdoptDetectedProcess(item.Pid);
+                    detectedInstanceIds.Add(existingController.Config.Id);
+                    RaiseChanged();
+                    return;
+                }
+            }
+            PluginDefinition plugin = null;
+            foreach (PluginDefinition candidate in catalog.All) { plugin = candidate; break; }
+            if (plugin == null) throw new InvalidOperationException("No plugin definitions are available.");
+            InstanceConfig instance = new InstanceConfig();
+            instance.Id = "windows-detected-" + item.Port;
+            instance.Name = "DSH " + item.Port;
+            instance.PluginId = plugin.Id;
+            instance.Profile = "web";
+            instance.Runtime = "auto";
+            instance.RuntimeType = InstanceModel.RuntimeTypeWindows;
+            instance.WslDistro = String.Empty;
+            instance.Workspace = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            instance.DshHome = String.Empty;
+            instance.PreferredPort = item.Port;
+            instance.PinnedVersion = plugin.Update == null ? String.Empty : plugin.Update.BundledVersion;
+            InstanceController detectedController = new InstanceController(instance, plugin, configurationStore, interaction);
+            detectedController.Changed += ControllerChanged;
+            detectedController.AdoptDetectedProcess(item.Pid);
+            controllers.Add(detectedController);
+            controllersById.Add(instance.Id, detectedController);
+            detectedInstanceIds.Add(instance.Id);
+            RaiseChanged();
         }
 
         public void RegisterDetectedWslInstance(WslRunningInstance item)
@@ -385,9 +437,12 @@ namespace DeepSeekHarnessManager
             {
                 if (String.Equals(existing.Id, instanceId, StringComparison.OrdinalIgnoreCase)) return;
             }
-            config.WslEnabled = true;
-            if (String.IsNullOrWhiteSpace(config.WslDefaultDistro))
-                config.WslDefaultDistro = controller.Config.WslDistro ?? String.Empty;
+            if (String.Equals(controller.Config.RuntimeType, InstanceModel.RuntimeTypeWsl, StringComparison.OrdinalIgnoreCase))
+            {
+                config.WslEnabled = true;
+                if (String.IsNullOrWhiteSpace(config.WslDefaultDistro))
+                    config.WslDefaultDistro = controller.Config.WslDistro ?? String.Empty;
+            }
             config.Instances.Add(controller.Config);
             configurationStore.Save(config);
             detectedInstanceIds.Remove(instanceId);
