@@ -22,7 +22,7 @@ Do not describe the manager package as the DSH runtime. They are separate packag
 
 ## Required Invariants
 
-- Backward compatibility is not a goal for now: the project has a single user and a single active installation/version. Prefer removing legacy fallback paths over preserving them.
+- Backward compatibility is not a goal for now: prefer removing legacy fallback paths over preserving them. The project remains open source and usable by multiple users, so current-version correctness, security, and multi-instance behavior must not be weakened.
 - Keep normal operation in the current user context; do not add elevation or administrator requirements.
 - Keep the GUI executable free of a console window.
 - Bind managed DSH Web instances to `127.0.0.1` unless the product requirements explicitly change.
