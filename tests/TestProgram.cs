@@ -54,6 +54,7 @@ namespace DeepSeekHarnessManager.Tests
                     Run("real DSH graceful shutdown", TestRealHarnessGracefulShutdown);
                     Run("runtime compatibility smoke test", TestRuntimeCompatibilitySmokeTest);
                     Run("wsl runtime adapter resolution", TestWslRuntimeAdapterResolution);
+                Run("wsl runtime resolution kinds", TestWslRuntimeResolutionKinds);
                     Run("wsl runtime command and launch", TestWslRuntimeCommandAndLaunch);
                 }
             }
@@ -791,6 +792,42 @@ namespace DeepSeekHarnessManager.Tests
             string[] journals = Directory.GetFiles(AppPaths.UpdateDirectory, "*.journal.json");
             Assert(journals.Length == 1, "failed rollback should preserve one recovery journal");
             foreach (string journal in journals) File.Delete(journal);
+        }
+
+        private static void TestWslRuntimeResolutionKinds()
+        {
+            PluginCatalog catalog = PluginCatalog.Load();
+            PluginDefinition plugin = catalog.Get("deepseek-harness-web");
+            WslRuntimeAdapter adapter = new WslRuntimeAdapter();
+
+            InstanceConfig npx = CreateInstance(plugin, 3080);
+            npx.RuntimeType = InstanceModel.RuntimeTypeWsl;
+            npx.WslDistro = "TestDistro";
+            npx.Runtime = "npx";
+            npx.PinnedVersion = "1.2.3";
+            RuntimeResolution npxResolution = adapter.Resolve(npx, plugin, 3080, String.Empty);
+            Assert(npxResolution.Version == "1.2.3", "wsl npx version should come from PinnedVersion");
+            Assert(npxResolution.Arguments[npxResolution.Arguments.Count - 1].IndexOf("@deepseek-ai/dsh@1.2.3", StringComparison.Ordinal) >= 0, "wsl npx launch command mismatch");
+
+            string fakeSource = Path.Combine(AppPaths.DataDirectory, "wsl-fake-source");
+            Directory.CreateDirectory(fakeSource);
+            File.WriteAllText(Path.Combine(fakeSource, "package.json"), "{\"version\":\"9.8.7\"}", Encoding.UTF8);
+            InstanceConfig source = CreateInstance(plugin, 3081);
+            source.RuntimeType = InstanceModel.RuntimeTypeWsl;
+            source.WslDistro = "TestDistro";
+            source.Runtime = "source";
+            source.SourceRoot = fakeSource;
+            RuntimeResolution sourceResolution = adapter.Resolve(source, plugin, 3081, String.Empty);
+            Assert(sourceResolution.Version == "9.8.7", "wsl source version should be read from package.json");
+            Assert(sourceResolution.Arguments[sourceResolution.Arguments.Count - 1].IndexOf("pnpm dsh", StringComparison.Ordinal) >= 0, "wsl source launch command mismatch");
+
+            InstanceConfig invalid = CreateInstance(plugin, 3082);
+            invalid.RuntimeType = InstanceModel.RuntimeTypeWsl;
+            invalid.WslDistro = "TestDistro";
+            invalid.Runtime = "unknown-kind";
+            bool rejected = false;
+            try { adapter.Resolve(invalid, plugin, 3082, String.Empty); } catch (InvalidOperationException) { rejected = true; }
+            Assert(rejected, "unknown wsl runtime kinds must be rejected");
         }
 
         private static void TestWslRuntimeAdapterResolution()

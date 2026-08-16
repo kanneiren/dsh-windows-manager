@@ -132,10 +132,15 @@ const tcpCtx = {
 }
 try {
   await apply(tcpCtx, { transport: 'tcp', host: '127.0.0.1', port: tcpPort, token: tcpToken })
-  const tcpPing = await requestTcp(tcpPort, { protocolVersion: 1, messageType: 'command', requestId: 't1', type: 'ping', token: tcpToken, payload: {} })
+  const tcpUnauthorized = await requestTcp(tcpPort, { protocolVersion: 1, messageType: 'command', requestId: 't0', type: 'getStatus', token: '0'.repeat(64), payload: {} })
+  if (!tcpUnauthorized.includes('unauthorized')) throw new Error('TCP wrong token was not rejected')
+  const tcpStatus = await requestTcp(tcpPort, { protocolVersion: 1, messageType: 'command', requestId: 't1', type: 'getStatus', token: tcpToken, payload: {} })
+  const tcpStatusMessage = JSON.parse(tcpStatus)
+  if (!tcpStatusMessage.ok || tcpStatusMessage.payload.pid !== process.pid) throw new Error('TCP getStatus did not return the DSH PID')
+  const tcpPing = await requestTcp(tcpPort, { protocolVersion: 1, messageType: 'command', requestId: 't2', type: 'ping', token: tcpToken, payload: {} })
   const tcpPingMessage = JSON.parse(tcpPing)
   if (!tcpPingMessage.ok || tcpPingMessage.payload.pong !== true) throw new Error('TCP ping was not accepted')
-  const tcpShutdown = await requestTcp(tcpPort, { protocolVersion: 1, messageType: 'command', requestId: 't2', type: 'shutdown', token: tcpToken, payload: {} })
+  const tcpShutdown = await requestTcp(tcpPort, { protocolVersion: 1, messageType: 'command', requestId: 't3', type: 'shutdown', token: tcpToken, payload: {} })
   if (!JSON.parse(tcpShutdown).ok) throw new Error('TCP shutdown was not accepted')
   await Promise.race([tcpExitPromise, new Promise((_, reject) => setTimeout(() => reject(new Error('TCP appExit timeout')), 3000))])
   if (tcpExitCode !== 0) throw new Error(`unexpected TCP exit code ${tcpExitCode}`)
