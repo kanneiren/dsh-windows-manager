@@ -28,6 +28,7 @@ Usage:
   dsh-windows-manager wsl status|detect [--json]
   dsh-windows-manager wsl enable [--distro <name>]
   dsh-windows-manager wsl disable
+  dsh-windows-manager wsl open
 
 Install options:
   --runtime <auto|global|npx|source>  Select the DSH runtime (default: auto)
@@ -465,6 +466,64 @@ function wslInfo() {
   return result;
 }
 
+async function wslOpen(args) {
+  parseOptions(args, [], []);
+  const configPath = path.join(dataRoot, 'config.json');
+  const config = readJson(configPath);
+  if (!config || !Array.isArray(config.Instances)) throw new Error(`DeepSeek Harness Manager is not installed. Run "dsh-windows-manager install" first.`);
+  const info = wslInfo();
+  if (!info.installed) throw new Error('WSL is not installed or wsl.exe is unavailable.');
+  let distro = config.WslDefaultDistro || '';
+  if (!distro) {
+    if (info.distros.length === 1) distro = info.distros[0];
+    else if (info.distros.length === 0) throw new Error('No WSL distros were detected.');
+    else throw new Error(`Multiple WSL distros detected (${info.distros.join(', ')}). Run wsl enable --distro <name> first.`);
+  }
+  config.WslEnabled = true;
+  config.WslDefaultDistro = distro;
+  let instance = config.Instances.find((item) => String(item.RuntimeType || '').toLowerCase() === 'wsl');
+  if (!instance) {
+    const plugin = readJson(path.join(installRoot, 'plugins', 'deepseek-harness-web', 'plugin.json')) || {};
+    instance = {
+      Id: 'wsl-web',
+      Name: `WSL ${distro}`,
+      PluginId: 'deepseek-harness-web',
+      Profile: 'web',
+      Runtime: 'global',
+      RuntimeType: 'wsl',
+      WslDistro: distro,
+      Frontend: 'web',
+      SourceRoot: '',
+      Workspace: process.env.USERPROFILE || '',
+      DshHome: '',
+      PreferredPort: 3088,
+      PinnedVersion: plugin.Update && plugin.Update.BundledVersion ? plugin.Update.BundledVersion : ''
+    };
+    config.Instances.push(instance);
+  }
+  config.DefaultInstanceId = instance.Id;
+  fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
+
+  const manager = managerInfo();
+  if (manager.running && manager.sid) {
+    const response = await requestControl('openwsl', null, manager.sid);
+    if (response && response.ok === true) {
+      console.log(`Manager accepted WSL open action for ${distro}.`);
+      return 0;
+    }
+    if (response && response.error && response.error.message) throw new Error(response.error.message);
+    throw new Error('The Manager rejected the WSL open action.');
+  }
+  const child = childProcess.spawn(installedExe, ['--action', 'open'], {
+    detached: true,
+    stdio: 'ignore',
+    windowsHide: true
+  });
+  child.unref();
+  console.log(`Starting WSL DSH in ${distro} and opening the Web UI.`);
+  return 0;
+}
+
 async function wslStatus(args) {
   const options = parseOptions(args, [], ['--json']);
   if (!fs.existsSync(installedExe)) throw new Error(`DeepSeek Harness Manager is not installed. Run "dsh-windows-manager install" first.`);
@@ -751,6 +810,7 @@ async function main() {
     if (sub === 'status') return wslStatus(args);
     if (sub === 'detect') return wslDetect(args);
     if (sub === 'enable') return wslEnable(args);
+    if (sub === 'open') return wslOpen(args);
     if (sub === 'disable') return wslDisable(args);
     throw new Error(`Unknown wsl command: ${sub}. Use wsl status|detect|enable|disable.`);
   }

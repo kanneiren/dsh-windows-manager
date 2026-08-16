@@ -73,6 +73,7 @@ namespace DeepSeekHarnessManager
         void HandleInitialAction(string action);
         void StartAutomaticUpdateChecks();
         void Open(string instanceId);
+        string OpenOrStartWsl();
         void Start(string instanceId);
         void Stop(string instanceId, bool confirm);
         void Restart(string instanceId);
@@ -243,6 +244,71 @@ namespace DeepSeekHarnessManager
         public void Open(string instanceId)
         {
             GetController(instanceId).OpenOrStart();
+        }
+
+        public string OpenOrStartWsl()
+        {
+            InstanceController wslController = null;
+            foreach (InstanceController controller in controllers)
+            {
+                if (String.Equals(controller.Config.RuntimeType, InstanceModel.RuntimeTypeWsl, StringComparison.OrdinalIgnoreCase))
+                {
+                    wslController = controller;
+                    break;
+                }
+            }
+            if (wslController == null)
+            {
+                string distro = String.IsNullOrWhiteSpace(config.WslDefaultDistro) ? null : config.WslDefaultDistro;
+                if (String.IsNullOrWhiteSpace(distro))
+                {
+                    List<string> distros = WslRuntimeAdapter.DetectDistros();
+                    if (distros.Count == 1) distro = distros[0];
+                    else if (distros.Count == 0) throw new InvalidOperationException("No WSL distros were detected.");
+                    else throw new InvalidOperationException("Multiple WSL distros were detected. Run dsh-windows-manager wsl enable --distro <name> first.");
+                }
+                int port = ChooseWslPreferredPort();
+                PluginDefinition plugin = null;
+                foreach (PluginDefinition candidate in catalog.All) { plugin = candidate; break; }
+                if (plugin == null) throw new InvalidOperationException("No plugin definitions are available.");
+                InstanceConfig instance = new InstanceConfig();
+                instance.Id = "wsl-web";
+                instance.Name = "WSL " + distro;
+                instance.PluginId = plugin.Id;
+                instance.Profile = "web";
+                instance.Runtime = "global";
+                instance.RuntimeType = InstanceModel.RuntimeTypeWsl;
+                instance.WslDistro = distro;
+                instance.Frontend = InstanceModel.FrontendWeb;
+                instance.Workspace = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                instance.DshHome = String.Empty;
+                instance.PreferredPort = port;
+                instance.PinnedVersion = plugin.Update == null ? String.Empty : plugin.Update.BundledVersion;
+                config.WslEnabled = true;
+                config.WslDefaultDistro = distro;
+                config.Instances.Add(instance);
+                configurationStore.Save(config);
+                wslController = new InstanceController(instance, plugin, configurationStore, interaction);
+                wslController.Changed += ControllerChanged;
+                controllers.Add(wslController);
+                controllersById.Add(instance.Id, wslController);
+            }
+            wslController.OpenOrStart();
+            RaiseChanged();
+            return wslController.Config.Id;
+        }
+
+        private int ChooseWslPreferredPort()
+        {
+            int port;
+            for (port = 3088; port <= 3099; port++)
+            {
+                bool configured = false;
+                foreach (InstanceConfig instance in config.Instances)
+                    if (instance.PreferredPort == port) configured = true;
+                if (!configured && PortMap.GetListenerProcessIds(port).Count == 0) return port;
+            }
+            throw new InvalidOperationException("No free WSL port was found near 3080.");
         }
 
         public void Start(string instanceId)

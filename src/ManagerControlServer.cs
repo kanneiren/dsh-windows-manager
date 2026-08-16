@@ -197,6 +197,23 @@ namespace DeepSeekHarnessManager
             if (command == "getstatus") return BuildGetStatusResponse(command);
             if (command == "start" || command == "stop" || command == "restart" || command == "open")
                 return ExecuteInstanceAction(command, instanceId);
+            if (command == "openwsl")
+            {
+                string instanceIdValue = manager.OpenOrStartWsl();
+                Dictionary<string, object> response = ManagerControlProtocol.NewResponse(command, true);
+                ManagerSnapshot snapshot = manager.GetSnapshot();
+                Dictionary<string, object> instance = FindInstancePayload(snapshot, instanceIdValue);
+                response["instance"] = instance;
+                if (instance != null)
+                {
+                    response["instanceId"] = instance["instanceId"];
+                    response["state"] = instance["state"];
+                    response["pid"] = instance["pid"];
+                    response["port"] = instance["port"];
+                    response["ownership"] = instance["ownership"];
+                }
+                return response;
+            }
             if (command == "exit")
             {
                 Dictionary<string, object> response = ManagerControlProtocol.NewResponse(command, true);

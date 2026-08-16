@@ -156,5 +156,6 @@
   "Menu.RemoveDetectedInstance": "Remove detected instance",
   "Diagnostics.DetectedWsl": "Detected {0} WSL DSH instance(s).",
   "Menu.DetectWindowsDsh": "Detect Windows DSH",
-  "Diagnostics.DetectedWindows": "Detected {0} Windows DSH instance(s)."
+  "Diagnostics.DetectedWindows": "Detected {0} Windows DSH instance(s).",
+  "Menu.OpenOrStartWsl": "Start and open WSL DSH"
 }

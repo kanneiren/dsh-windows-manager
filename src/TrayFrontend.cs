@@ -97,6 +97,16 @@ namespace DeepSeekHarnessManager
             menu.Items.Add(instanceSelector);
             menu.Items.Add(new ToolStripSeparator());
 
+            ToolStripMenuItem openWsl = new ToolStripMenuItem(Localization.Text("Menu.OpenOrStartWsl"));
+            openWsl.Click += delegate
+            {
+                try { manager.OpenOrStartWsl(); }
+                catch (Exception exception)
+                {
+                    MessageBox.Show(exception.Message, Localization.Text("App.Title"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            };
+            menu.Items.Add(openWsl);
             detectWindowsItem = new ToolStripMenuItem(Localization.Text("Menu.DetectWindowsDsh"));
             detectWindowsItem.Click += delegate { DetectWindowsDshAsync(); };
             menu.Items.Add(detectWindowsItem);

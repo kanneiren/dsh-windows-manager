@@ -115,10 +115,25 @@ namespace DeepSeekHarnessManager
             inspection.HttpVerified = VerifyHttp(instance, plugin, port);
             inspection.ProcessVerified = managerOwned && inspection.HttpVerified;
             inspection.BridgeVerified = false;
-            inspection.Kind = inspection.HttpVerified ? InstanceStateKind.Running : InstanceStateKind.Stopped;
-            inspection.Detail = managerOwned
-                ? "WSL managed launch (HTTP markers verified; Runtime Bridge is authoritative when connected)"
-                : "WSL attached DSH (HTTP markers verified; no Runtime Bridge token, lifecycle is limited)";
+            if (inspection.HttpVerified)
+            {
+                inspection.Kind = InstanceStateKind.Running;
+                inspection.Detail = managerOwned
+                    ? "WSL managed launch (HTTP markers verified; Runtime Bridge is authoritative when connected)"
+                    : "WSL attached DSH (HTTP markers verified; no Runtime Bridge token, lifecycle is limited)";
+                return inspection;
+            }
+            int windowsOwner = PortMap.GetPreferredListenerProcessId(port);
+            if (windowsOwner > 0)
+            {
+                inspection.ProcessId = windowsOwner;
+                inspection.Process = ProcessInspector.Get(windowsOwner, true);
+                inspection.Kind = InstanceStateKind.Conflict;
+                inspection.Detail = "The Windows-side loopback port is occupied.";
+                return inspection;
+            }
+            inspection.Kind = InstanceStateKind.Stopped;
+            inspection.Detail = "No WSL DSH HTTP listener was detected.";
             return inspection;
         }
 

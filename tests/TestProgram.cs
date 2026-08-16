@@ -41,6 +41,7 @@ namespace DeepSeekHarnessManager.Tests
                 Run("HTTP and process fingerprints", TestInspection);
                 Run("external unhealthy DSH preservation", TestExternalUnhealthyHarnessPreserved);
                 Run("windows DSH port detection", TestWindowsDshPortDetection);
+                Run("WSL port conflict inspection", TestWslPortConflictInspection);
                 Run("runtime resolution", TestRuntimeResolution);
                 Run("runtime adapter registry", TestRuntimeAdapters);
                 Run("runtime bridge patch", TestRuntimeBridgePatch);
@@ -468,6 +469,47 @@ namespace DeepSeekHarnessManager.Tests
                     try { if (!process.HasExited) process.Kill(); } catch { }
                     try { process.WaitForExit(3000); } catch { }
                 }
+            }
+        }
+
+        private static void TestWslPortConflictInspection()
+        {
+            TcpListener listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            Thread server = new Thread(delegate()
+            {
+                try
+                {
+                    using (TcpClient client = listener.AcceptTcpClient())
+                    using (NetworkStream stream = client.GetStream())
+                    {
+                        byte[] buffer = new byte[1024];
+                        stream.Read(buffer, 0, buffer.Length);
+                        byte[] response = Encoding.ASCII.GetBytes("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n");
+                        stream.Write(response, 0, response.Length);
+                    }
+                }
+                catch { }
+            });
+            server.IsBackground = true;
+            server.Start();
+            try
+            {
+                PluginCatalog catalog = PluginCatalog.Load();
+                PluginDefinition plugin = catalog.Get("deepseek-harness-web");
+                InstanceConfig instance = CreateInstance(plugin, port);
+                instance.RuntimeType = InstanceModel.RuntimeTypeWsl;
+                instance.WslDistro = "TestDistro";
+                WslRuntimeAdapter adapter = new WslRuntimeAdapter();
+                PortInspection inspection = adapter.InspectPort(instance, plugin, port, false);
+                Assert(inspection.Kind == InstanceStateKind.Conflict, "occupied Windows port should be reported as a WSL conflict");
+                Assert(inspection.ProcessId == Process.GetCurrentProcess().Id, "WSL conflict should identify the Windows port owner");
+            }
+            finally
+            {
+                listener.Stop();
+                server.Join(2000);
             }
         }
 
