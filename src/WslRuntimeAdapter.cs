@@ -115,13 +115,43 @@ namespace DeepSeekHarnessManager
             inspection.HttpVerified = VerifyHttp(instance, plugin, port);
             inspection.ProcessVerified = managerOwned && inspection.HttpVerified;
             inspection.BridgeVerified = false;
-            inspection.Kind = inspection.HttpVerified
-                ? (managerOwned ? InstanceStateKind.Running : InstanceStateKind.Starting)
-                : InstanceStateKind.Stopped;
+            inspection.Kind = inspection.HttpVerified ? InstanceStateKind.Running : InstanceStateKind.Stopped;
             inspection.Detail = managerOwned
                 ? "WSL managed launch (HTTP markers verified; Runtime Bridge is authoritative when connected)"
-                : "WSL HTTP markers only; Runtime Bridge authentication is required for adoption";
+                : "WSL attached DSH (HTTP markers verified; no Runtime Bridge token, lifecycle is limited)";
             return inspection;
+        }
+
+        public static List<string> DetectDistros()
+        {
+            List<string> distros = new List<string>();
+            try
+            {
+                string wsl = FindWslExe();
+                if (!File.Exists(wsl)) return distros;
+                using (System.Diagnostics.Process process = new System.Diagnostics.Process())
+                {
+                    process.StartInfo.FileName = wsl;
+                    process.StartInfo.Arguments = "--list --quiet";
+                    process.StartInfo.UseShellExecute = false;
+                    process.StartInfo.CreateNoWindow = true;
+                    process.StartInfo.RedirectStandardOutput = true;
+                    process.StartInfo.StandardOutputEncoding = Encoding.Unicode;
+                    if (!process.Start()) return distros;
+                    string output = process.StandardOutput.ReadToEnd();
+                    process.WaitForExit(10000);
+                    if (process.ExitCode != 0) return distros;
+                    foreach (string value in output.Replace("\0", String.Empty).Split(new char[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        string distro = value.Trim();
+                        if (distro.Length > 0 && !distros.Contains(distro)) distros.Add(distro);
+                    }
+                }
+            }
+            catch
+            {
+            }
+            return distros;
         }
 
         public string GetDistro(InstanceConfig instance)

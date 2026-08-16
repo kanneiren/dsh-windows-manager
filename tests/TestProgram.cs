@@ -28,6 +28,7 @@ namespace DeepSeekHarnessManager.Tests
                 Run("plugin catalog", TestPluginCatalog);
                 Run("configuration round trip", TestConfiguration);
                 Run("manager service facade", TestManagerServiceFacade);
+                Run("detected WSL instance registration", TestDetectedWslInstanceRegistration);
                 Run("manager interaction routing", TestManagerInteractionRouting);
                 Run("manager control protocol", TestManagerControlProtocol);
                 Run("DSH settings path", TestDshSettingsPath);
@@ -166,6 +167,39 @@ namespace DeepSeekHarnessManager.Tests
                 string diagnostics = service.GetDiagnosticsText();
                 Assert(diagnostics.IndexOf("Manager version:", StringComparison.Ordinal) >= 0, "diagnostics should contain the manager version");
                 Assert(diagnostics.IndexOf(snapshot.Instances[0].Name, StringComparison.Ordinal) >= 0, "diagnostics should contain the instance name");
+            }
+        }
+
+        private static void TestDetectedWslInstanceRegistration()
+        {
+            PluginCatalog catalog = PluginCatalog.Load();
+            ConfigurationStore store = new ConfigurationStore(catalog);
+            ManagerConfig config = store.LoadOrCreate();
+            config.WslEnabled = true;
+            config.WslDefaultDistro = "TestDistro";
+            store.Save(config);
+            using (ManagerService service = new ManagerService(config, catalog, store, SilentManagerInteraction.Instance))
+            {
+                WslRunningInstance detected = new WslRunningInstance();
+                detected.Distro = "TestDistro";
+                detected.Pid = 12345;
+                detected.Port = 4098;
+                detected.CommandLine = "node dsh web --port 4098";
+                service.RegisterDetectedWslInstance(detected);
+                ManagerSnapshot snapshot = service.GetSnapshot();
+                Assert(snapshot.Instances.Count == 2, "detected WSL instance should appear in the snapshot");
+                InstanceSnapshot dynamic = snapshot.Instances[1];
+                Assert(dynamic.RuntimeType == InstanceModel.RuntimeTypeWsl, "detected instance should be wsl runtime type");
+                Assert(dynamic.IsDetected, "detected instance should be marked dynamic");
+                service.SaveDetectedInstance(dynamic.Id);
+                ManagerSnapshot savedSnapshot = service.GetSnapshot();
+                Assert(!savedSnapshot.Instances[1].IsDetected, "saved WSL instance should no longer be dynamic");
+                ManagerConfig savedConfig = store.LoadOrCreate();
+                Assert(savedConfig.Instances.Count == 2, "saved WSL instance should be persisted to config");
+                savedConfig.Instances.RemoveAt(savedConfig.Instances.Count - 1);
+                savedConfig.WslEnabled = false;
+                savedConfig.WslDefaultDistro = String.Empty;
+                store.Save(savedConfig);
             }
         }
 

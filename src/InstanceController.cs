@@ -1203,6 +1203,19 @@ namespace DeepSeekHarnessManager
                 : (DateTime?)null;
         }
 
+        public void AdoptDetectedProcess(int processId)
+        {
+            ownership = InstanceOwnership.Attached;
+            ProcessId = processId;
+            startedAtUtc = null;
+            LastError = String.Empty;
+            nextInspectionUtc = DateTime.MinValue;
+            if (State != InstanceStateKind.Starting && State != InstanceStateKind.Running)
+            {
+                SetState(InstanceStateKind.Stopped, "Detected WSL DSH on port " + Config.PreferredPort);
+            }
+        }
+
         private void SetState(InstanceStateKind state, string text)
         {
             bool changed = State != state || !String.Equals(StatusText, text, StringComparison.Ordinal);

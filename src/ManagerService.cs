@@ -44,6 +44,7 @@ namespace DeepSeekHarnessManager
         public bool UpdateCheckInProgress { get; set; }
         public string LastStartResult { get; set; }
         public string LastExitReason { get; set; }
+        public bool IsDetected { get; set; }
         public bool IpcBridgeConnected { get; set; }
         public string BridgeState { get; set; }
         public string RuntimeBridgeVersion { get; set; }
@@ -80,6 +81,10 @@ namespace DeepSeekHarnessManager
         void SetLanguage(string language);
         string GetInstanceDetails(string instanceId);
         string GetDiagnosticsText();
+        List<WslRunningInstance> DetectWslDsh();
+        void RegisterDetectedWslInstance(WslRunningInstance item);
+        void RemoveDetectedInstance(string instanceId);
+        void SaveDetectedInstance(string instanceId);
         void OpenConfiguration();
         void OpenManagerLogs();
         void OpenDshLogs();
@@ -92,6 +97,7 @@ namespace DeepSeekHarnessManager
     public sealed class ManagerService : IManagerService, IDisposable
     {
         private readonly ManagerConfig config;
+        private readonly PluginCatalog catalog;
         private readonly ConfigurationStore configurationStore;
         private readonly UpdateManager updateManager;
         private readonly IManagerInteraction interaction;
@@ -99,18 +105,21 @@ namespace DeepSeekHarnessManager
         private readonly Dictionary<string, InstanceController> controllersById;
         private readonly Dictionary<string, DateTime> nextUpdateChecksUtc;
         private readonly HashSet<string> updateChecksInFlight;
+        private readonly HashSet<string> detectedInstanceIds;
         private readonly object updateSync = new object();
         private bool disposed;
 
-        public ManagerService(ManagerConfig managerConfig, PluginCatalog catalog, ConfigurationStore store, IManagerInteraction managerInteraction)
+        public ManagerService(ManagerConfig managerConfig, PluginCatalog pluginCatalog, ConfigurationStore store, IManagerInteraction managerInteraction)
         {
             config = managerConfig;
+            catalog = pluginCatalog;
             configurationStore = store;
             interaction = managerInteraction ?? SilentManagerInteraction.Instance;
             controllers = new List<InstanceController>();
             controllersById = new Dictionary<string, InstanceController>(StringComparer.OrdinalIgnoreCase);
             nextUpdateChecksUtc = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
             updateChecksInFlight = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            detectedInstanceIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             updateManager = new UpdateManager(store, config, interaction);
 
             foreach (InstanceConfig instance in config.Instances)
@@ -165,6 +174,7 @@ namespace DeepSeekHarnessManager
                 item.UpdateCheckInProgress = IsUpdateCheckInFlight(controller.Config.Id);
                 item.LastStartResult = controller.LastStartResult ?? String.Empty;
                 item.LastExitReason = controller.LastExitReason ?? String.Empty;
+                item.IsDetected = detectedInstanceIds.Contains(controller.Config.Id);
                 item.IpcBridgeConnected = controller.IpcBridgeConnected;
                 item.BridgeState = controller.BridgeRuntime == null ? String.Empty : (controller.BridgeRuntime.State ?? String.Empty);
                 item.RuntimeBridgeVersion = controller.BridgeRuntime == null ? String.Empty : (controller.BridgeRuntime.RuntimeBridgeVersion ?? String.Empty);
@@ -286,6 +296,99 @@ namespace DeepSeekHarnessManager
         public string GetInstanceDetails(string instanceId)
         {
             return GetController(instanceId).GetDetails();
+        }
+
+        public List<WslRunningInstance> DetectWslDsh()
+        {
+            List<WslRunningInstance> result = new List<WslRunningInstance>();
+            HashSet<string> distros = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (config.WslEnabled.HasValue && config.WslEnabled.Value && !String.IsNullOrWhiteSpace(config.WslDefaultDistro))
+                distros.Add(config.WslDefaultDistro);
+            foreach (InstanceConfig instance in config.Instances)
+            {
+                if (String.Equals(instance.RuntimeType, InstanceModel.RuntimeTypeWsl, StringComparison.OrdinalIgnoreCase) &&
+                    !String.IsNullOrWhiteSpace(instance.WslDistro))
+                    distros.Add(instance.WslDistro);
+            }
+            if (distros.Count == 0)
+            {
+                foreach (string distro in WslRuntimeAdapter.DetectDistros()) distros.Add(distro);
+            }
+            WslRuntimeAdapter adapter = new WslRuntimeAdapter();
+            foreach (string distro in distros)
+            {
+                List<WslRunningInstance> detected = adapter.DetectRunning(distro);
+                foreach (WslRunningInstance item in detected) result.Add(item);
+            }
+            return result;
+        }
+
+        public void RegisterDetectedWslInstance(WslRunningInstance item)
+        {
+            if (item == null || item.Pid <= 0 || item.Port <= 0 || String.IsNullOrWhiteSpace(item.Distro)) return;
+            foreach (InstanceController existingController in controllers)
+            {
+                if (String.Equals(existingController.Config.RuntimeType, InstanceModel.RuntimeTypeWsl, StringComparison.OrdinalIgnoreCase) &&
+                    String.Equals(existingController.Config.WslDistro, item.Distro, StringComparison.OrdinalIgnoreCase) &&
+                    existingController.Config.PreferredPort == item.Port)
+                {
+                    existingController.AdoptDetectedProcess(item.Pid);
+                    detectedInstanceIds.Add(existingController.Config.Id);
+                    RaiseChanged();
+                    return;
+                }
+            }
+
+            PluginDefinition plugin = null;
+            foreach (PluginDefinition candidate in catalog.All) { plugin = candidate; break; }
+            if (plugin == null) throw new InvalidOperationException("No plugin definitions are available.");
+            InstanceConfig instance = new InstanceConfig();
+            instance.Id = "wsl-detected-" + AppPaths.SafeFileName(item.Distro) + "-" + item.Port;
+            instance.Name = "WSL " + item.Distro;
+            instance.PluginId = plugin.Id;
+            instance.Profile = "web";
+            instance.Runtime = "global";
+            instance.RuntimeType = InstanceModel.RuntimeTypeWsl;
+            instance.WslDistro = item.Distro;
+            instance.Workspace = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            instance.DshHome = String.Empty;
+            instance.PreferredPort = item.Port;
+            instance.PinnedVersion = plugin.Update == null ? String.Empty : plugin.Update.BundledVersion;
+            InstanceController detectedController = new InstanceController(instance, plugin, configurationStore, interaction);
+            detectedController.Changed += ControllerChanged;
+            detectedController.AdoptDetectedProcess(item.Pid);
+            controllers.Add(detectedController);
+            controllersById.Add(instance.Id, detectedController);
+            detectedInstanceIds.Add(instance.Id);
+            RaiseChanged();
+        }
+
+        public void RemoveDetectedInstance(string instanceId)
+        {
+            if (!detectedInstanceIds.Contains(instanceId)) return;
+            InstanceController controller;
+            if (!controllersById.TryGetValue(instanceId, out controller)) return;
+            controller.Changed -= ControllerChanged;
+            controller.Close();
+            controllers.Remove(controller);
+            controllersById.Remove(instanceId);
+            detectedInstanceIds.Remove(instanceId);
+            RaiseChanged();
+        }
+
+        public void SaveDetectedInstance(string instanceId)
+        {
+            if (!detectedInstanceIds.Contains(instanceId)) return;
+            InstanceController controller;
+            if (!controllersById.TryGetValue(instanceId, out controller)) return;
+            foreach (InstanceConfig existing in config.Instances)
+            {
+                if (String.Equals(existing.Id, instanceId, StringComparison.OrdinalIgnoreCase)) return;
+            }
+            config.Instances.Add(controller.Config);
+            configurationStore.Save(config);
+            detectedInstanceIds.Remove(instanceId);
+            RaiseChanged();
         }
 
         public string GetDiagnosticsText()
