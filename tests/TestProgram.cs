@@ -956,10 +956,13 @@ namespace DeepSeekHarnessManager.Tests
                 using (ManagerService service = new ManagerService(managerConfig, catalog, store, SilentManagerInteraction.Instance))
                 {
                     List<WslRunningInstance> serviceDetected = service.DetectWslDsh();
-                    bool serviceFound = false;
+                    WslRunningInstance target = null;
                     foreach (WslRunningInstance item in serviceDetected)
-                        if (item.Port == instance.PreferredPort) { serviceFound = true; break; }
-                    Assert(serviceFound, "manager service should detect the launched WSL DSH through its distro list");
+                        if (item.Port == instance.PreferredPort) { target = item; break; }
+                    Assert(target != null, "manager service should detect the launched WSL DSH through its distro list");
+                    string terminateError;
+                    Assert(adapter.TerminateLinuxProcess(distro, target.Pid, out terminateError), "attached WSL DSH should terminate through its Linux PID: " + terminateError);
+                    Assert(process.WaitForExit(10000), "wsl.exe should exit after its DSH process was terminated");
                 }
             }
             finally

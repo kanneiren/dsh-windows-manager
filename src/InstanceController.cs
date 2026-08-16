@@ -456,8 +456,42 @@ namespace DeepSeekHarnessManager
             {
                 if (launchProcess == null)
                 {
-                    interaction.Show(ManagerMessageKind.Warning, Localization.Text("Dialog.NotVerified"));
-                    return false;
+                    ProcessIdentity wslIdentity = new ProcessIdentity();
+                    wslIdentity.ProcessId = ProcessId;
+                    wslIdentity.Name = "DSH (WSL)";
+                    wslIdentity.ImagePath = Config.WslDistro ?? String.Empty;
+                    wslIdentity.SessionId = -1;
+                    wslIdentity.Services = new List<string>();
+                    if (!interaction.ConfirmForceEnd(wslIdentity)) return false;
+                    WslRuntimeAdapter adapter = RuntimeAdapters.Get(Config) as WslRuntimeAdapter;
+                    if (adapter == null)
+                    {
+                        interaction.Show(ManagerMessageKind.Warning, Localization.Text("Dialog.NotVerified"));
+                        return false;
+                    }
+                    bool stillCurrent = false;
+                    List<WslRunningInstance> detected = adapter.DetectRunning(Config.WslDistro);
+                    foreach (WslRunningInstance item in detected)
+                    {
+                        if (item.Pid == ProcessId && item.Port == inspection.Port)
+                        {
+                            stillCurrent = true;
+                            break;
+                        }
+                    }
+                    if (!stillCurrent)
+                    {
+                        interaction.Show(ManagerMessageKind.Warning, Localization.Text("Safety.Changed"));
+                        return false;
+                    }
+                    string wslTerminationError;
+                    if (!adapter.TerminateLinuxProcess(Config.WslDistro, ProcessId, out wslTerminationError))
+                    {
+                        interaction.Show(ManagerMessageKind.Warning, wslTerminationError);
+                        return false;
+                    }
+                    FinishStop();
+                    return true;
                 }
                 if (!interaction.ConfirmForceEnd(launchIdentity))
                 {

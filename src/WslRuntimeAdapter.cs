@@ -257,6 +257,34 @@ namespace DeepSeekHarnessManager
             return result;
         }
 
+        public bool TerminateLinuxProcess(string distro, int pid, out string error)
+        {
+            error = String.Empty;
+            if (String.IsNullOrWhiteSpace(distro) || pid <= 0)
+            {
+                error = "Invalid WSL process identity.";
+                return false;
+            }
+            CommandResult terminate = RunCommand(distro, "kill", new string[] { "-TERM", pid.ToString(System.Globalization.CultureInfo.InvariantCulture) }, AppPaths.AppDirectory, 5000);
+            if (terminate.ExitCode == 0)
+            {
+                for (int attempt = 0; attempt < 6; attempt++)
+                {
+                    System.Threading.Thread.Sleep(500);
+                    CommandResult check = RunCommand(distro, "ps", new string[] { "-p", pid.ToString(System.Globalization.CultureInfo.InvariantCulture), "-o", "pid=" }, AppPaths.AppDirectory, 5000);
+                    if (check.ExitCode != 0 || String.IsNullOrWhiteSpace(check.StandardOutput)) return true;
+                }
+            }
+            CommandResult force = RunCommand(distro, "kill", new string[] { "-KILL", pid.ToString(System.Globalization.CultureInfo.InvariantCulture) }, AppPaths.AppDirectory, 5000);
+            if (force.ExitCode == 0)
+            {
+                error = String.Empty;
+                return true;
+            }
+            error = force.StandardError ?? "The WSL process could not be terminated.";
+            return false;
+        }
+
         public CommandResult RunCommand(InstanceConfig instance, string command, IList<string> arguments, string workingDirectory, int timeoutMilliseconds)
         {
             string distro = GetDistro(instance);

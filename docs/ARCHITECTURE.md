@@ -179,7 +179,7 @@ fallback   → verified kill of the recorded Linux PID via wsl.exe
 never      → default wsl.exe --terminate <distro> (too broad)
 ```
 
-Externally started WSL DSH is adopted as `attached` and gains full lifecycle control only after authenticating through the Runtime Bridge.
+Externally started WSL DSH is adopted as `attached`. It is detected from its Linux PID and listening port, can be opened and monitored immediately, and can be stopped by revalidating the Linux PID/port and sending `kill` inside the distro after explicit confirmation. Full lifecycle control (restart/update) is available after the Manager starts its own WSL DSH with the Runtime Bridge.
 
 Config additions planned:
 
