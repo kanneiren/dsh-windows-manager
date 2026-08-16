@@ -25,6 +25,16 @@ Unknown processes are never terminated automatically. The user must request term
 
 An externally started DSH process that does not become Web-ready is not automatically terminated on a readiness timeout. Startup cleanup is limited to a process launched by the current manager operation.
 
+## Manager Control Protocol
+
+The Manager exposes a separate local named pipe for the CLI and third-party frontends:
+
+```text
+\\.\pipe\dsh-windows-manager-control-{user-sid}
+```
+
+Only the current Windows user can read and write it. It listens on no TCP endpoint and is not reachable from the local network or internet. Protocol v1 contains only `getVersion`, `getStatus`, `listInstances`, `start`, `stop`, `restart`, and `open`, and every response carries `protocolVersion`. It offers no arbitrary command execution, PowerShell, npm proxy, or arbitrary file read/write. It accepts one JSON object per line with a 64 KiB input limit.
+
 ## Graceful Shutdown and IPC
 
 Each manager-launched DSH instance receives a unique named-pipe name and a random 256-bit hexadecimal token through a generated local patch. The pipe accepts only authenticated `ping`, `getStatus`, `getRuntimeInfo`, and `shutdown` commands; the DSH-side plugin verifies the token before calling `ctx.appExit(0)`.

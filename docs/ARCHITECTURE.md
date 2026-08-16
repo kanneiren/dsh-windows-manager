@@ -49,9 +49,26 @@ Separating application and data files allows upgrades and default uninstall oper
 
 ## Host Components
 
-`Program` creates a per-user mutex and named Windows event handles. A second invocation signals the existing tray process for `open`, `start`, `stop`, `restart`, or `exit` instead of creating a second manager.
+`Program` creates a per-user mutex and legacy named Windows event handles. A second invocation forwards `open`, `start`, `stop`, `restart`, or `exit` through the Manager Control pipe when available, with the named events retained as an older-primary fallback; it never creates a second manager. The process stays a single EXE: `Program` constructs `ManagerService` (core), starts `ManagerControlServer`, and then runs either `TrayFrontend` (`TrayEnabled=true`) or `HeadlessFrontend` (`TrayEnabled=false`) against the same `IManagerService`.
 
-`TrayApplication` owns the notification icon, menus, one-second action-signal timer, language selection, and 24-hour update schedule. It creates one `InstanceController` for each configured instance.
+`ManagerService` implements `IManagerService` and owns the configured `InstanceController` list, lifecycle actions, action signals, 24-hour update scheduling, frontend-open actions, and configuration access. `TrayFrontend` owns only the notification icon, menus, language selection, balloons, and UI marshaling; it no longer constructs or calls controllers and update infrastructure directly.
+
+The dependency direction is:
+
+```text
+TrayFrontend
+    |
+    v
+IManagerService
+    |
+    v
+ManagerService
+    |
+    v
+DshSupervisor / InstanceController / UpdateManager / Runtime Bridge
+```
+
+`ManagerService`, `InstanceController`, `UpdateManager`, and process-safety code do not reference `NotifyIcon`, tray menus, `MessageBox`, or `IWin32Window`. In headless mode, `SilentManagerInteraction` handles decisions without UI and the same Manager Control pipe remains the only external interface. `HeadlessFrontend` keeps the WinForms message loop in the same EXE solely for timers and synchronization; it owns no tray resources. User decisions cross the `IManagerInteraction` boundary; `WinFormsManagerInteraction` in `Dialogs.cs` is the tray implementation, and `SilentManagerInteraction` exists for tests and future headless use. Both layers still compile into the single `DeepSeekHarnessManager.exe` process; this is logical decoupling only, not process separation.
 
 The one-second WinForms timer exists only for cross-process action signals and to coalesce IPC/process notifications into UI updates. State detection is event-driven when possible:
 
@@ -65,7 +82,11 @@ The one-second WinForms timer exists only for cross-process action signals and t
 
 ## Instance and Port Model
 
-`config.json` contains an `Instances` array. Each instance has a unique `Id` and `PreferredPort`, plus its runtime, workspace, profile, optional source checkout, optional `DshHome`, and pinned version.
+`config.json` contains an `Instances` array. Each instance has a unique `Id` and `PreferredPort`, plus its runtime, workspace, profile, optional source checkout, optional `DshHome`, pinned version, `RuntimeType`, and `Frontend`.
+
+`RuntimeType` is `windows` or `wsl`. Only `windows` is implemented; the field is reserved now so configuration and snapshots do not hard-code a Windows singleton. `Frontend` is `web`, `oh-dsh`, or `custom`; only `web` is implemented.
+
+Instance state records `Ownership`: `managed` when this Manager launched the process and has full lifecycle control, `attached` when the process was started externally and was later discovered/adopted. Legacy state files without `Ownership` default to `attached`; a Manager restart keeps `managed` ownership only when the persisted PID still matches the verified process.
 
 The manager always launches DSH with explicit `--host 127.0.0.1 --port <port>` arguments. Port `3080` is only the plugin default. An external DSH process on a custom port is adopted only when that port is configured for an instance and both fingerprints match.
 
@@ -75,9 +96,62 @@ One configured instance produces a flat tray menu. Multiple instances produce on
 
 Use a separate `DshHome` for strong state isolation. An empty value inherits `DSH_HOME` and falls back to the upstream default `~/.dsh` when that environment variable is also empty.
 
+## Configuration
+
+The Manager keeps zero-config defaults for one Windows DSH + Web frontend. Advanced configuration is available through:
+
+```text
+dsh-windows-manager configure
+dsh-windows-manager configure --runtime windows --frontend web --tray true --shortcut false --autostart true
+```
+
+The CLI edits `config.json` in place and preserves unknown fields. `--runtime` sets the default instance `RuntimeType`; `--frontend` sets `Frontend`; `--tray` sets `TrayEnabled`; `--shortcut` creates/removes the desktop shortcut; `--autostart` updates the per-user Run key only when explicitly requested. There is no first-run GUI wizard.
+
+## Runtime Adapter Boundary
+
+`IRuntimeAdapter` is the boundary between the Supervisor and a concrete runtime host:
+
+```text
+RuntimeAdapters.Get(instance)
+    → windows  WindowsRuntimeAdapter
+    → wsl      reserved; throws "adapter not implemented"
+```
+
+A runtime adapter owns:
+
+```text
+Resolve(runtime command + arguments)
+ResolveInstalledVersion
+Start(IRuntimeProcess)
+CaptureIdentity
+Kill
+```
+
+`IRuntimeProcess` abstracts the native process handle so a future WSL adapter can expose a wsl.exe-launched process without changing `InstanceController` state transitions. Fallback discovery is intentionally not abstracted yet: the current Windows path still uses `PortMap`/`ProcessInspector`, and a future WSL implementation should use bridge-first state plus adapter-specific fallback rather than WMI PID guessing.
+
+The Runtime Bridge remains protocol-oriented and transport-oriented separately:
+
+```text
+Manager Protocol ≠ Transport
+Windows Native → named pipe
+Future WSL     → loopback + strong authentication token (to be evaluated)
+```
+
+## Frontend Launch
+
+`FrontendLauncher` resolves the configured instance `Frontend`:
+
+```text
+web    -> http://127.0.0.1:{port}/ from the plugin probe template
+oh-dsh -> reserved; returns an explicit not-configured error, never falls back to web
+custom -> reserved; returns an explicit not-configured error
+```
+
+Tray menu labels and `getStatus`/`listInstances` responses expose the configured frontend. Manager opens only the selected frontend; it does not implement Chat, Session, Terminal, TUI, or Desktop UI.
+
 ## IPC Bridge Protocol
 
-The Companion has been upgraded from a single-purpose shutdown channel to a versioned runtime bridge. Every new message is one JSON object per line and carries `protocolVersion`, `messageType`, `requestId` (commands/responses), `type`, `payload`, and `error`.
+The Runtime Bridge plugin has been upgraded from a single-purpose shutdown channel to a versioned runtime bridge. Every new message is one JSON object per line and carries `protocolVersion`, `messageType`, `requestId` (commands/responses), `type`, `payload`, and `error`.
 
 Supported commands:
 
@@ -98,6 +172,32 @@ The plugin still accepts the original `{"action":"shutdown","token":"..."}` enve
 
 `plugins/deepseek-harness-web` is also a formal DSH bundle (`package.json` declares `dsh.bundle.patch`), while Manager-launched instances continue to use the per-launch `--patch` so each process gets a unique pipe and token. The bundle entry is inert until configured, which keeps the dynamic patch as the compatibility layer during the DSH API preview.
 
+## Manager Control Protocol
+
+The Manager exposes a separate local named pipe for the npm CLI and future third-party frontends:
+
+```text
+\\.\pipe\dsh-windows-manager-control-{user-sid}
+```
+
+It is completely separate from the Manager↔DSH Runtime Bridge Protocol. The pipe is local-only, protected by a DACL that allows only the current Windows user, and is served by an async accept loop (`ManagerControlServer`) inside the primary Manager process. There is no TCP listener and no periodic status polling.
+
+Protocol v1 commands:
+
+```text
+getVersion
+getStatus
+listInstances
+start
+stop
+restart
+open
+```
+
+Every response carries `protocolVersion: 1`. Unknown commands, malformed JSON, and unsupported protocol versions receive explicit error responses. The protocol intentionally has no `runCommand`, PowerShell, npm proxy, or arbitrary file read/write commands.
+
+A second Manager invocation tries the control pipe first and falls back to the legacy named-event activation path when talking to an older primary, so old and new invocations remain compatible and never start a second Supervisor.
+
 ## State Source Selection
 
 ```text
@@ -111,7 +211,7 @@ Manager ---------+
 
 For a Manager-owned process, the OS process handle is the liveness source and the bridge is the state source. Stable running instances no longer perform periodic WMI queries or loopback HTTP probes. Fallback discovery still runs when:
 
-- no companion bridge was persisted;
+- no runtime bridge credentials were persisted;
 - DSH was started externally without the plugin;
 - the plugin failed to load;
 - the bridge protocol is incompatible;
@@ -157,6 +257,12 @@ Automatic checks are network reads only. Their result and actual attempt time ar
 Update execution always requires confirmation. Global npm updates install an exact selected version, npx updates change the configured pinned version, and source updates require a clean Git checkout before fast-forward pull, dependency installation, and build.
 
 Every update is a transaction. The manager records the old version or source commit, applies the change, then starts the resolved runtime on a random loopback port with an isolated DSH home. Success requires HTTP and process fingerprints followed by authenticated Cordis shutdown. A failed update or smoke test rolls back and smoke-tests the restored runtime. Global npm restores the exact old version, npx restores its old pin, and source resets to the recorded commit only if the checkout remains clean. A failed rollback leaves a journal under the update data directory.
+
+## Diagnostics
+
+`IManagerService.GetDiagnosticsText()` builds a lightweight text snapshot from the live `ManagerSnapshot`: Manager version/PID, tray mode, and per instance state, ownership, PID, port, DSH version, frontend, DSH_HOME, working directory, Runtime Bridge state/version/protocol version, start time, last start result, and last exit reason.
+
+The tray exposes `Copy diagnostics`, `Open Manager logs`, and `Open DSH logs`. The npm CLI exposes `dsh-windows-manager diagnostics [--json]`, which uses the Manager Control `getStatus` response when a primary is running and local config/state otherwise. There is no log database or Log Viewer.
 
 ## Packaging
 

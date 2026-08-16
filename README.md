@@ -98,13 +98,39 @@ dsh-windows-manager start
 dsh-windows-manager stop
 dsh-windows-manager restart
 dsh-windows-manager status
+dsh-windows-manager diagnostics
+dsh-windows-manager configure
 dsh-windows-manager uninstall
 dsh-windows-manager uninstall --purge-data
 ```
 
 `start` 只启动 DSH，`open` 会启动并打开 Web UI。`uninstall` 默认保留配置和日志；`--purge-data` 才会完全清理。
 
+首次运行采用 zero-config：只有一个 Windows DSH 和 Web frontend 时会直接使用默认值。需要高级配置时运行：
+
+```text
+dsh-windows-manager configure
+```
+
+非交互模式：
+
+```text
+dsh-windows-manager configure --runtime windows --frontend web --tray true --shortcut false --autostart true
+```
+
+`--runtime` 设置 `RuntimeType`（`windows`，`wsl` 预留），`--frontend` 设置 `web`/`oh-dsh`/`custom`，`--tray`、`--shortcut`、`--autostart` 设置托盘、桌面快捷方式和开机自启。不会显示重量级 GUI Wizard。
+
 `3080` 只是新实例的默认端口，并非写死。新安装可通过 `--port 4000` 指定；已有安装不会因再次执行安装命令而覆盖配置，应通过托盘菜单打开管理器配置文件，修改 `config.json` 中实例的 `PreferredPort`，然后退出并重新启动管理器。管理器会显式向 DSH 传递 `--port`，外部手动启动的 DSH 也只有在端口与实例配置一致时才会被安全接管。
+
+Manager 运行期间，CLI 的 `status` / `open` / `start` / `stop` / `restart` 会通过本机命名管道 `\\.\pipe\dsh-windows-manager-control-{user}` 交给 Primary，而不是启动第二个 Supervisor。该 Manager Control Protocol v1 只提供 `getVersion`、`getStatus`、`listInstances`、`start`、`stop`、`restart`、`open`，仅允许当前 Windows 用户访问，不监听 TCP，也不提供任意命令执行。
+
+`open` 遵循实例的 `Frontend` 配置：当前 `web` 打开本地 Web UI；`oh-dsh` 和 `custom` 已预留，但未配置实现时会明确报错，不会静默退回 Web。
+
+把 `config.json` 中的 `TrayEnabled` 设为 `false` 后，同一个 `DeepSeekHarnessManager.exe` 会以无托盘模式运行：Manager Core、Supervisor、Runtime Bridge 和 Manager Control API 继续工作，通过 CLI 控制。
+
+`RuntimeType` 已预留给未来 WSL 支持。当前只有 `WindowsRuntimeAdapter`；选择 `wsl` 会得到明确的 “adapter not implemented” 错误，而不会退回 Windows 启动路径。
+
+
 
 ### 卸载
 
@@ -281,7 +307,7 @@ powershell.exe -ExecutionPolicy Bypass -File .\scripts\Install.ps1 `
 - 每次启动都使用应用清单中的 `asInvoker` 当前用户权限，不会请求 UAC 管理员授权。
 - 应用清单固定为 `asInvoker`，日常运行不请求 UAC。
 - 安装和配置均位于当前用户目录。
-- 不注册 Windows 服务、不设置开机启动、不修改防火墙、不监听 `0.0.0.0`。
+- 不注册 Windows 服务；只有用户明确执行 `configure --autostart true` 时才写入当前用户的 Run 键。不修改防火墙、不监听 `0.0.0.0`。
 - 若另一台电脑的 npm 全局目录需要管理员权限，更新会失败并显示错误，不会自动提权。
 - 程序目前没有商业代码签名证书。360、Defender SmartScreen 等软件可能对首次运行、启动 Node、创建命名管道或用户主动结束进程进行启发式提示。
 - 复制源码后在本机执行 `Build.cmd` 可得到可复现的本地构建；正式消除“未知发布者”需要受信任的代码签名证书。

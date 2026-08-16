@@ -98,13 +98,39 @@ dsh-windows-manager start
 dsh-windows-manager stop
 dsh-windows-manager restart
 dsh-windows-manager status
+dsh-windows-manager diagnostics
+dsh-windows-manager configure
 dsh-windows-manager uninstall
 dsh-windows-manager uninstall --purge-data
 ```
 
 `start` starts DSH without opening a page, while `open` starts DSH and opens the Web UI. By default, `uninstall` preserves the configuration and logs; only `--purge-data` removes everything.
 
+The first run uses zero-config discovery: with one Windows DSH and the Web frontend, sensible defaults are applied automatically. For advanced configuration run:
+
+```text
+dsh-windows-manager configure
+```
+
+Non-interactive mode:
+
+```text
+dsh-windows-manager configure --runtime windows --frontend web --tray true --shortcut false --autostart true
+```
+
+`--runtime` sets `RuntimeType` (`windows`; `wsl` is reserved), `--frontend` sets `web`/`oh-dsh`/`custom`, and `--tray`/`--shortcut`/`--autostart` control the tray, desktop shortcut, and Start-with-Windows behavior. There is no heavyweight first-run GUI wizard.
+
 `3080` is only the default port for new instances; it is not hardcoded. For a new installation, use `--port 4000` to select another port. Re-running the installation command does not overwrite the configuration of an existing installation. Instead, open the manager configuration file from the tray menu, edit the instance's `PreferredPort` in `config.json`, then exit and restart the manager. The manager explicitly passes `--port` to DSH. A manually started external DSH process can be safely adopted only when its port matches the instance configuration.
+
+While the Manager is running, CLI `status` / `open` / `start` / `stop` / `restart` commands are forwarded to the primary over the local named pipe `\\.\pipe\dsh-windows-manager-control-{user}` instead of starting a second supervisor. Manager Control Protocol v1 provides only `getVersion`, `getStatus`, `listInstances`, `start`, `stop`, `restart`, and `open`; it is accessible only to the current Windows user, listens on no TCP endpoint, and offers no arbitrary command execution.
+
+`open` honors the instance `Frontend` setting: `web` opens the local Web UI, while `oh-dsh` and `custom` are reserved and report an explicit not-configured error instead of silently falling back to web.
+
+Setting `TrayEnabled` to `false` in `config.json` runs the same `DeepSeekHarnessManager.exe` without a tray icon: Manager Core, Supervisor, Runtime Bridge, and Manager Control API continue running and remain controllable through the CLI.
+
+`RuntimeType` is reserved for future WSL support. Only `WindowsRuntimeAdapter` is implemented; selecting `wsl` reports an explicit adapter-not-implemented error instead of falling back to the Windows launch path.
+
+
 
 ### Uninstallation
 
@@ -245,7 +271,7 @@ The bridge is now a versioned runtime protocol, not a single-purpose shutdown ch
 4. DSH waits up to 5 seconds for the entire Cordis plugin tree to run `dispose`.
 5. DSH exits after sessions, file watchers, terminals, and the HTTP service finish cleaning up.
 
-A named pipe is not a network port and is not exposed to the local network or the internet. An externally started DSH process that did not load the companion plugin can still be adopted and opened, but stopping it explicitly prompts whether to use forced termination as a fallback.
+A named pipe is not a network port and is not exposed to the local network or the internet. An externally started DSH process that did not load the Runtime Bridge plugin can still be adopted and opened, but stopping it explicitly prompts whether to use forced termination as a fallback.
 
 The original single-purpose `{"action":"shutdown","token":"..."}` message is still accepted so DSH processes launched by older Manager versions remain stoppable.
 
@@ -281,7 +307,7 @@ There is currently no graphical interface for adding instances. Open the manager
 - Every launch uses the current user's `asInvoker` permissions from the application manifest and does not request UAC administrator authorization.
 - The application manifest is fixed to `asInvoker`; routine use does not request UAC.
 - Installation and configuration are both located in the current user's directories.
-- The manager does not register a Windows service, configure startup, modify the firewall, or listen on `0.0.0.0`.
+- The manager does not register a Windows service; it writes the per-user Run key only when the user explicitly runs `configure --autostart true`. It does not modify the firewall or listen on `0.0.0.0`.
 - If the global npm directory on another computer requires administrator privileges, the update fails and displays an error instead of elevating automatically.
 - The program currently has no commercial code-signing certificate. Software such as 360 or Defender SmartScreen may display heuristic prompts when it first runs, starts Node, creates a named pipe, or terminates a process at the user's request.
 - After copying the source, run `Build.cmd` locally to produce a reproducible local build. Eliminating the "Unknown publisher" warning for official releases requires a trusted code-signing certificate.

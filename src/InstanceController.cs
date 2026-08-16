@@ -7,19 +7,20 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Windows.Forms;
 
 namespace DeepSeekHarnessManager
 {
     public sealed class InstanceController
     {
         private readonly ConfigurationStore configurationStore;
+        private readonly IManagerInteraction interaction;
         private readonly List<Regex> processPatterns;
         private readonly object bridgeSync = new object();
         private readonly Queue<BridgeMessage> bridgeMessages = new Queue<BridgeMessage>();
         private PersistedInstanceState persistedState;
-        private volatile ManagedProcess launchProcess;
-        private volatile CompanionLaunch companion;
+        private volatile IRuntimeProcess launchProcess;
+        private IRuntimeAdapter activeAdapter;
+        private volatile RuntimeBridgeLaunch bridgeLaunch;
         private DateTime startDeadlineUtc;
         private bool openWhenReady;
         private int startingPort;
@@ -40,12 +41,20 @@ namespace DeepSeekHarnessManager
         private bool managedProcessExitHandled;
         private bool processExitJustHandled;
         private bool stopExpected;
+        private InstanceOwnership ownership;
+        private DateTime? startedAtUtc;
 
         public InstanceController(InstanceConfig config, PluginDefinition plugin, ConfigurationStore store)
+            : this(config, plugin, store, SilentManagerInteraction.Instance)
+        {
+        }
+
+        public InstanceController(InstanceConfig config, PluginDefinition plugin, ConfigurationStore store, IManagerInteraction managerInteraction)
         {
             Config = config;
             Plugin = plugin;
             configurationStore = store;
+            interaction = managerInteraction ?? SilentManagerInteraction.Instance;
             processPatterns = new List<Regex>();
             if (plugin.ProcessPatterns != null)
             {
@@ -58,21 +67,29 @@ namespace DeepSeekHarnessManager
                 ActivePort = persistedState.Port;
                 savedPort = persistedState.Port;
                 savedProcessId = persistedState.ProcessId;
-                companion = new CompanionLaunch();
-                companion.PipeName = persistedState.PipeName;
-                companion.Token = persistedState.PipeToken;
-                companion.PatchPath = persistedState.PatchPath;
+                bridgeLaunch = new RuntimeBridgeLaunch();
+                bridgeLaunch.PipeName = persistedState.PipeName;
+                bridgeLaunch.Token = persistedState.PipeToken;
+                bridgeLaunch.PatchPath = persistedState.PatchPath;
             }
+            ownership = ResolvePersistedOwnership(persistedState);
+            startedAtUtc = ParseUtc(persistedState == null ? null : persistedState.StartedAtUtc);
+            ProcessId = persistedState == null ? 0 : persistedState.ProcessId;
             State = InstanceStateKind.Stopped;
             StatusText = "Stopped";
-            InstalledVersion = RuntimeResolver.ResolveInstalledVersion(config, plugin);
+            InstalledVersion = RuntimeAdapters.ResolveInstalledVersion(config, plugin);
         }
 
         public InstanceConfig Config { get; private set; }
         public PluginDefinition Plugin { get; private set; }
+        public InstanceOwnership Ownership { get { return ownership; } }
+        public DateTime? StartedAtUtc { get { return startedAtUtc; } }
+        public int ProcessId { get; private set; }
         public InstanceStateKind State { get; private set; }
         public string StatusText { get; private set; }
         public string LastError { get; private set; }
+        public string LastStartResult { get; private set; }
+        public string LastExitReason { get; private set; }
         public string InstalledVersion { get; set; }
         public UpdateInfo UpdateInfo { get; set; }
         public int ActivePort { get; private set; }
@@ -174,7 +191,7 @@ namespace DeepSeekHarnessManager
                 return;
             }
 
-            if (State == InstanceStateKind.Running && companion != null && !bridgeProtocolIncompatible)
+            if (State == InstanceStateKind.Running && bridgeLaunch != null && !bridgeProtocolIncompatible)
             {
                 EnsureBridgeConnection();
             }
@@ -190,16 +207,19 @@ namespace DeepSeekHarnessManager
                 ActivePort = current.Port;
                 SaveRunningState(current);
                 SetState(InstanceStateKind.Running, "Running on port " + current.Port);
-                if (companion != null && !bridgeProtocolIncompatible) EnsureBridgeConnection();
+                if (bridgeLaunch != null && !bridgeProtocolIncompatible) EnsureBridgeConnection();
             }
             else if (current.Kind == InstanceStateKind.Starting)
             {
+                ApplyInspectionOwnership(current);
                 ActivePort = current.Port;
                 SetState(InstanceStateKind.Starting, "External instance is starting on port " + current.Port);
             }
             else if (current.Kind == InstanceStateKind.Conflict)
             {
                 ActivePort = 0;
+                ProcessId = current.ProcessId;
+                ownership = InstanceOwnership.Attached;
                 SetState(InstanceStateKind.Conflict, "Port " + current.Port + " is occupied by " + SafeProcessName(current.Process));
             }
             else
@@ -209,10 +229,13 @@ namespace DeepSeekHarnessManager
                 {
                     configurationStore.DeleteState(Config.Id);
                     persistedState = null;
-                    companion = null;
+                    bridgeLaunch = null;
                     savedPort = 0;
                     savedProcessId = 0;
                 }
+                ProcessId = 0;
+                startedAtUtc = null;
+                ownership = InstanceOwnership.Attached;
                 SetState(InstanceStateKind.Stopped, "Stopped");
             }
         }
@@ -267,7 +290,7 @@ namespace DeepSeekHarnessManager
             return inspection;
         }
 
-        public void OpenOrStart(IWin32Window owner)
+        public void OpenOrStart()
         {
             PortInspection inspection = FindCurrentInspection();
             LastInspection = inspection;
@@ -275,11 +298,12 @@ namespace DeepSeekHarnessManager
             {
                 ActivePort = inspection.Port;
                 SaveRunningState(inspection);
-                OpenWebUi(inspection.Port);
+                OpenFrontend(inspection.Port);
                 return;
             }
             if (inspection.Kind == InstanceStateKind.Starting)
             {
+                ApplyInspectionOwnership(inspection);
                 ActivePort = inspection.Port;
                 startingPort = inspection.Port;
                 startDeadlineUtc = DateTime.UtcNow.AddSeconds(90);
@@ -289,24 +313,26 @@ namespace DeepSeekHarnessManager
             }
             if (inspection.Kind == InstanceStateKind.Conflict)
             {
+                ProcessId = inspection.ProcessId;
+                ownership = InstanceOwnership.Attached;
                 inspection.Process = ProcessInspector.Get(inspection.ProcessId, true);
-                ConflictChoice choice = ManagerDialogs.ShowPortConflict(owner, inspection, FindFreePort());
+                ConflictChoice choice = interaction.ResolvePortConflict(inspection, FindFreePort());
                 if (choice.Action == ConflictAction.UseAlternate)
                 {
-                    Start(choice.Port, true, owner);
+                    Start(choice.Port, true);
                 }
                 else if (choice.Action == ConflictAction.EndProcess)
                 {
                     string error;
-                    if (SafeTermination.TryCloseThenKill(inspection.Process, inspection.Port, owner, out error)) Start(Config.PreferredPort, true, owner);
-                    else if (!String.IsNullOrWhiteSpace(error)) MessageBox.Show(owner, error, Localization.Text("App.Title"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    if (SafeTermination.TryCloseThenKill(inspection.Process, inspection.Port, interaction, out error)) Start(Config.PreferredPort, true);
+                    else if (!String.IsNullOrWhiteSpace(error)) interaction.Show(ManagerMessageKind.Warning, error);
                 }
                 return;
             }
-            Start(Config.PreferredPort, true, owner);
+            Start(Config.PreferredPort, true);
         }
 
-        public void Start(int port, bool openAfterStart, IWin32Window owner)
+        public void Start(int port, bool openAfterStart)
         {
             if (State == InstanceStateKind.Starting || State == InstanceStateKind.Stopping || State == InstanceStateKind.Updating) return;
             PortInspection inspection = InspectPort(port);
@@ -316,29 +342,36 @@ namespace DeepSeekHarnessManager
                 {
                     ActivePort = port;
                     SaveRunningState(inspection);
-                    if (openAfterStart) OpenWebUi(port);
+                    if (openAfterStart) OpenFrontend(port);
                 }
                 else
                 {
-                    MessageBox.Show(owner, Localization.Format("Dialog.PortUnavailable", port), Localization.Text("App.Title"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    interaction.Show(ManagerMessageKind.Warning, Localization.Format("Dialog.PortUnavailable", port));
                 }
                 return;
             }
             try
             {
-                companion = CompanionPatch.Create(Config, Plugin);
-                string patchPath = companion == null ? String.Empty : companion.PatchPath;
-                RuntimeResolution runtime = RuntimeResolver.Resolve(Config, Plugin, port, patchPath);
+                bridgeLaunch = RuntimeBridgePatch.Create(Config, Plugin);
+                string patchPath = bridgeLaunch == null ? String.Empty : bridgeLaunch.PatchPath;
+                IRuntimeAdapter adapter = RuntimeAdapters.Get(Config);
+                RuntimeResolution runtime = adapter.Resolve(Config, Plugin, port, patchPath);
                 string timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
                 string runtimeDirectory = AppPaths.InstanceRuntimeDirectory(Config.Id);
                 string outputLog = Path.Combine(AppPaths.LogDirectory, Config.Id + "-" + timestamp + ".out.log");
                 string errorLog = Path.Combine(AppPaths.LogDirectory, Config.Id + "-" + timestamp + ".err.log");
                 FileLog.Info("Starting " + Config.Id + " with " + runtime.Description + " on port " + port);
-                launchProcess = CommandRunner.StartService(runtime, outputLog, errorLog);
+                activeAdapter = adapter;
+                launchProcess = adapter.Start(runtime, outputLog, errorLog);
                 launchProcess.Exited += OnManagedProcessExited;
-                if (launchProcess.ExitObserved) managedProcessExited = true;
-                launchIdentity = ProcessInspector.Get(launchProcess.RootProcess.Id, false);
+                if (launchProcess.HasExited) managedProcessExited = true;
+                launchIdentity = adapter.CaptureIdentity(launchProcess);
                 cachedProcessIdentity = launchIdentity;
+                ownership = InstanceOwnership.Managed;
+                ProcessId = launchProcess.ProcessId;
+                startedAtUtc = launchIdentity == null ? null : launchIdentity.StartTimeUtc;
+                LastStartResult = "pending";
+                LastExitReason = String.Empty;
                 ActiveRuntime = runtime;
                 InstalledVersion = runtime.Version;
                 startingPort = port;
@@ -355,10 +388,12 @@ namespace DeepSeekHarnessManager
                 nextBridgeConnectUtc = DateTime.UtcNow;
                 persistedState = new PersistedInstanceState();
                 persistedState.Port = port;
-                persistedState.ProcessId = launchProcess.RootProcess.Id;
+                persistedState.ProcessId = launchProcess.ProcessId;
+                persistedState.StartedAtUtc = startedAtUtc.HasValue ? startedAtUtc.Value.ToString("o") : String.Empty;
+                persistedState.Ownership = InstanceModel.ToText(ownership);
                 persistedState.RuntimeId = runtime.Definition.Id;
-                persistedState.PipeName = companion == null ? String.Empty : companion.PipeName;
-                persistedState.PipeToken = companion == null ? String.Empty : companion.Token;
+                persistedState.PipeName = bridgeLaunch == null ? String.Empty : bridgeLaunch.PipeName;
+                persistedState.PipeToken = bridgeLaunch == null ? String.Empty : bridgeLaunch.Token;
                 persistedState.PatchPath = patchPath;
                 persistedState.OutputLog = outputLog;
                 persistedState.ErrorLog = errorLog;
@@ -372,42 +407,40 @@ namespace DeepSeekHarnessManager
                 FileLog.Error(exception);
                 LastError = exception.Message;
                 SetState(InstanceStateKind.Error, "Start failed: " + exception.Message);
-                MessageBox.Show(owner, Localization.Format("Dialog.StartFailed", exception.Message), Localization.Text("App.Title"), MessageBoxButtons.OK, MessageBoxIcon.Error);
+                interaction.Show(ManagerMessageKind.Error, Localization.Format("Dialog.StartFailed", exception.Message));
             }
         }
 
-        public bool Stop(IWin32Window owner, bool confirm)
+        public bool Stop(bool confirm)
         {
             PortInspection inspection = FindCurrentInspection();
             if (inspection.Kind != InstanceStateKind.Running && inspection.Kind != InstanceStateKind.Starting)
             {
-                if (confirm) MessageBox.Show(owner, Localization.Text("Dialog.NotRunning"), Localization.Text("App.Title"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+                if (confirm) interaction.Show(ManagerMessageKind.Information, Localization.Text("Dialog.NotRunning"));
                 return true;
             }
             if (confirm)
             {
-                DialogResult result = MessageBox.Show(owner,
+                if (!interaction.Confirm(ManagerConfirmKind.Question,
                     Localization.Format("Dialog.StopConfirm", Config.Name, inspection.Port, inspection.ProcessId),
-                    Localization.Text("App.Title"), MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-                if (result != DialogResult.Yes) return false;
+                    Localization.Text("App.Title"))) return false;
             }
 
             string bridgeError;
             if (TryGracefulStop(inspection, out bridgeError)) return true;
 
-            DialogResult fallback = MessageBox.Show(owner,
+            if (!interaction.Confirm(ManagerConfirmKind.Warning,
                 Localization.Format("Dialog.GracefulFailed", bridgeError),
-                Localization.Text("App.Title"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
-            if (fallback != DialogResult.Yes) return false;
+                Localization.Text("App.Title"))) return false;
             if (!inspection.ProcessVerified && !inspection.HttpVerified)
             {
-                MessageBox.Show(owner, Localization.Text("Dialog.NotVerified"), Localization.Text("App.Title"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                interaction.Show(ManagerMessageKind.Warning, Localization.Text("Dialog.NotVerified"));
                 return false;
             }
             string terminationError;
-            if (!SafeTermination.TryCloseThenKill(inspection.Process, inspection.Port, owner, out terminationError))
+            if (!SafeTermination.TryCloseThenKill(inspection.Process, inspection.Port, interaction, out terminationError))
             {
-                MessageBox.Show(owner, terminationError, Localization.Text("App.Title"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                interaction.Show(ManagerMessageKind.Warning, terminationError);
                 return false;
             }
             FinishStop();
@@ -426,10 +459,10 @@ namespace DeepSeekHarnessManager
             return TryGracefulStop(inspection, out error);
         }
 
-        public void Restart(IWin32Window owner)
+        public void Restart()
         {
             int port = ActivePort > 0 ? ActivePort : Config.PreferredPort;
-            if (Stop(owner, false)) Start(port, true, owner);
+            if (Stop(false)) Start(port, true);
         }
 
         public string GetDetails()
@@ -439,6 +472,7 @@ namespace DeepSeekHarnessManager
             text.AppendLine(Localization.Text("Details.Instance") + ": " + Config.Name + " (" + Config.Id + ")");
             text.AppendLine(Localization.Text("Details.State") + ": " + State);
             text.AppendLine(Localization.Text("Details.Profile") + ": " + Config.Profile);
+            text.AppendLine(Localization.Text("Details.Frontend") + ": " + (String.IsNullOrWhiteSpace(Config.Frontend) ? InstanceModel.FrontendWeb : Config.Frontend));
             text.AppendLine(Localization.Text("Details.Runtime") + ": " + Config.Runtime);
             text.AppendLine(Localization.Text("Details.Version") + ": " + (String.IsNullOrWhiteSpace(InstalledVersion) ? Localization.Text("Version.Unknown") : InstalledVersion));
             text.AppendLine(Localization.Text("Details.Port") + ": " + inspection.Port);
@@ -545,6 +579,7 @@ namespace DeepSeekHarnessManager
             ActivePort = inspection.Port;
             startingPort = 0;
             LastError = String.Empty;
+            LastStartResult = "success";
             managedProcessExitHandled = false;
             managedProcessExited = false;
             processExitJustHandled = false;
@@ -554,7 +589,7 @@ namespace DeepSeekHarnessManager
             if (openWhenReady)
             {
                 openWhenReady = false;
-                OpenWebUi(inspection.Port);
+                OpenFrontend(inspection.Port);
             }
         }
 
@@ -562,23 +597,16 @@ namespace DeepSeekHarnessManager
         {
             int failedPort = startingPort;
             LastError = error;
+            LastStartResult = "failed";
+            LastExitReason = error;
             startingPort = 0;
             openWhenReady = false;
             try
             {
-                PortInspection inspection = launchProcess != null && failedPort > 0 ? InspectPort(failedPort) : null;
-                if (launchProcess != null && inspection != null && inspection.ProcessVerified && inspection.ProcessId > 0)
+                if (launchProcess != null && !launchProcess.HasExited && activeAdapter != null)
                 {
-                    using (Process process = Process.GetProcessById(inspection.ProcessId))
-                    {
-                        CommandRunner.KillProcessTree(process);
-                        process.WaitForExit(3000);
-                    }
-                }
-                else if (launchProcess != null && launchProcess.RootProcess != null && !launchProcess.RootProcess.HasExited)
-                {
-                    CommandRunner.KillProcessTree(launchProcess.RootProcess);
-                    launchProcess.RootProcess.WaitForExit(3000);
+                    activeAdapter.Kill(launchProcess);
+                    launchProcess.WaitForExit(3000);
                 }
             }
             catch { }
@@ -590,6 +618,9 @@ namespace DeepSeekHarnessManager
             managedProcessExited = false;
             processExitJustHandled = false;
             launchIdentity = null;
+            ProcessId = 0;
+            startedAtUtc = null;
+            ownership = InstanceOwnership.Attached;
             DisposeLaunchProcess();
             SetState(InstanceStateKind.Error, error);
             FileLog.Error(Config.Id + ": " + error);
@@ -598,16 +629,17 @@ namespace DeepSeekHarnessManager
         private void FinishStop()
         {
             FileLog.Info(Config.Id + " stopped");
+            LastExitReason = "manager-requested-stop";
             ActivePort = 0;
             startingPort = 0;
             openWhenReady = false;
-            string patchPath = companion == null ? null : companion.PatchPath;
+            string patchPath = bridgeLaunch == null ? null : bridgeLaunch.PatchPath;
             CloseBridge();
             bridgeStatus = null;
             bridgeError = String.Empty;
             lifecycleGeneration++;
             persistedState = null;
-            companion = null;
+            bridgeLaunch = null;
             savedPort = 0;
             savedProcessId = 0;
             stopExpected = false;
@@ -616,6 +648,9 @@ namespace DeepSeekHarnessManager
             processExitJustHandled = false;
             bridgeConnectAttempts = 0;
             launchIdentity = null;
+            ProcessId = 0;
+            startedAtUtc = null;
+            ownership = InstanceOwnership.Attached;
             configurationStore.DeleteState(Config.Id);
             try { if (!String.IsNullOrWhiteSpace(patchPath) && File.Exists(patchPath)) File.Delete(patchPath); } catch { }
             DisposeLaunchProcess();
@@ -626,16 +661,17 @@ namespace DeepSeekHarnessManager
         {
             if (launchProcess == null) return;
             try { launchProcess.Exited -= OnManagedProcessExited; } catch { }
-            try { if (launchProcess.RootProcess != null) launchProcess.RootProcess.Dispose(); } catch { }
+            try { launchProcess.Dispose(); } catch { }
             launchProcess = null;
+            activeAdapter = null;
         }
 
         private bool TryGracefulStop(PortInspection inspection, out string error)
         {
             stopExpected = true;
             bool requested = GracefulShutdownClient.Request(
-                companion == null ? null : companion.PipeName,
-                companion == null ? null : companion.Token,
+                bridgeLaunch == null ? null : bridgeLaunch.PipeName,
+                bridgeLaunch == null ? null : bridgeLaunch.Token,
                 1500,
                 out error);
             if (!requested)
@@ -673,19 +709,45 @@ namespace DeepSeekHarnessManager
 
         private void SaveRunningState(PortInspection inspection)
         {
-            if (inspection.ProcessId == savedProcessId && inspection.Port == savedPort && persistedState != null) return;
+            bool modelFieldsMissing = persistedState == null
+                || String.IsNullOrWhiteSpace(persistedState.Ownership)
+                || String.IsNullOrWhiteSpace(persistedState.StartedAtUtc);
+            if (inspection.ProcessId == savedProcessId && inspection.Port == savedPort && persistedState != null && !modelFieldsMissing) return;
             if (persistedState == null) persistedState = new PersistedInstanceState();
+            ApplyInspectionOwnership(inspection);
             persistedState.Port = inspection.Port;
             persistedState.ProcessId = inspection.ProcessId;
             persistedState.ProcessImagePath = inspection.Process == null ? String.Empty : inspection.Process.ImagePath;
             persistedState.ProcessStartTimeUtc = inspection.Process != null && inspection.Process.StartTimeUtc.HasValue ? inspection.Process.StartTimeUtc.Value.ToString("o") : String.Empty;
-            persistedState.PipeName = companion == null ? persistedState.PipeName : companion.PipeName;
-            persistedState.PipeToken = companion == null ? persistedState.PipeToken : companion.Token;
-            persistedState.PatchPath = companion == null ? persistedState.PatchPath : companion.PatchPath;
+            persistedState.StartedAtUtc = startedAtUtc.HasValue ? startedAtUtc.Value.ToString("o") : String.Empty;
+            persistedState.Ownership = InstanceModel.ToText(ownership);
+            persistedState.PipeName = bridgeLaunch == null ? persistedState.PipeName : bridgeLaunch.PipeName;
+            persistedState.PipeToken = bridgeLaunch == null ? persistedState.PipeToken : bridgeLaunch.Token;
+            persistedState.PatchPath = bridgeLaunch == null ? persistedState.PatchPath : bridgeLaunch.PatchPath;
             persistedState.UpdatedAt = DateTime.UtcNow.ToString("o");
             configurationStore.SaveState(Config.Id, persistedState);
             savedPort = inspection.Port;
             savedProcessId = inspection.ProcessId;
+        }
+
+        private void ApplyInspectionOwnership(PortInspection inspection)
+        {
+            if (launchProcess != null)
+            {
+                ownership = InstanceOwnership.Managed;
+            }
+            else if (ownership == InstanceOwnership.Managed && persistedState != null && persistedState.ProcessId == inspection.ProcessId)
+            {
+                // A Manager-managed process is still the same PID after a
+                // Manager restart; keep full lifecycle ownership.
+            }
+            else
+            {
+                ownership = InstanceOwnership.Attached;
+            }
+            ProcessId = inspection.ProcessId;
+            if (inspection.Process != null && inspection.Process.StartTimeUtc.HasValue)
+                startedAtUtc = inspection.Process.StartTimeUtc;
         }
 
         public void DrainBridgeMessages()
@@ -844,8 +906,8 @@ namespace DeepSeekHarnessManager
 
         private void EnsureBridgeConnection()
         {
-            if (bridgeProtocolIncompatible || companion == null) return;
-            if (String.IsNullOrWhiteSpace(companion.PipeName) || String.IsNullOrWhiteSpace(companion.Token)) return;
+            if (bridgeProtocolIncompatible || bridgeLaunch == null) return;
+            if (String.IsNullOrWhiteSpace(bridgeLaunch.PipeName) || String.IsNullOrWhiteSpace(bridgeLaunch.Token)) return;
             if (bridge != null)
             {
                 if (bridge.IsConnected) return;
@@ -859,7 +921,7 @@ namespace DeepSeekHarnessManager
 
         private void BridgeConnectWorker()
         {
-            CompanionLaunch launch = companion;
+            RuntimeBridgeLaunch launch = bridgeLaunch;
             int generation = lifecycleGeneration;
             if (launch == null || generation != lifecycleGeneration) return;
 
@@ -956,10 +1018,10 @@ namespace DeepSeekHarnessManager
                 String.Equals(BridgeProtocol.ErrorCode(response), "unauthorized", StringComparison.OrdinalIgnoreCase))
             {
                 // The running DSH still has the original single-purpose
-                // shutdown Companion. Keep legacy graceful stop working and
-                // let fallback discovery remain the state source.
+                // shutdown plugin. Keep legacy graceful stop working and let
+                // fallback discovery remain the state source.
                 bridgeProtocolIncompatible = true;
-                bridgeError = "The running DSH Companion predates the versioned IPC protocol; legacy fallback is active.";
+                bridgeError = "The running DSH plugin predates the versioned Runtime Bridge protocol; legacy fallback is active.";
                 FileLog.Info(Config.Id + ": " + bridgeError);
                 RaiseChanged();
                 return;
@@ -1000,8 +1062,8 @@ namespace DeepSeekHarnessManager
 
         private void OnManagedProcessExited(object sender, EventArgs args)
         {
-            ManagedProcess managed = sender as ManagedProcess;
-            if (managed == null || !ReferenceEquals(managed, launchProcess)) return;
+            IRuntimeProcess runtime = sender as IRuntimeProcess;
+            if (runtime == null || !ReferenceEquals(runtime, launchProcess)) return;
             managedProcessExited = true;
             RaiseChanged();
         }
@@ -1023,18 +1085,23 @@ namespace DeepSeekHarnessManager
 
             FileLog.Error(Config.Id + ": DSH process exited unexpectedly (PID " + SafeProcessId() + ").");
             LastError = "DSH process exited unexpectedly.";
+            LastStartResult = "failed";
+            LastExitReason = "unexpected-exit";
             CloseBridge();
             bridgeStatus = null;
             bridgeError = String.Empty;
             lifecycleGeneration++;
             stopExpected = false;
             launchIdentity = null;
+            ProcessId = 0;
+            startedAtUtc = null;
+            ownership = InstanceOwnership.Attached;
             ActivePort = 0;
             startingPort = 0;
             openWhenReady = false;
-            string patchPath = companion == null ? null : companion.PatchPath;
+            string patchPath = bridgeLaunch == null ? null : bridgeLaunch.PatchPath;
             persistedState = null;
-            companion = null;
+            bridgeLaunch = null;
             savedPort = 0;
             savedProcessId = 0;
             configurationStore.DeleteState(Config.Id);
@@ -1046,9 +1113,7 @@ namespace DeepSeekHarnessManager
         private bool IsLaunchProcessExited()
         {
             if (managedProcessExited) return true;
-            if (launchProcess == null || launchProcess.RootProcess == null) return false;
-            try { return launchProcess.RootProcess.HasExited; }
-            catch { return true; }
+            return launchProcess == null || launchProcess.HasExited;
         }
 
         private void CloseBridge()
@@ -1069,11 +1134,28 @@ namespace DeepSeekHarnessManager
 
         private string SafeProcessId()
         {
-            if (launchProcess == null || launchProcess.RootProcess == null) return "unknown";
-            try { return launchProcess.RootProcess.Id.ToString(); }
-            catch { return "unknown"; }
+            int processId = launchProcess == null ? 0 : launchProcess.ProcessId;
+            return processId <= 0 ? "unknown" : processId.ToString();
         }
 
+
+        private static InstanceOwnership ResolvePersistedOwnership(PersistedInstanceState state)
+        {
+            if (state == null) return InstanceOwnership.Attached;
+            if (!String.IsNullOrWhiteSpace(state.Ownership)) return InstanceModel.ParseOwnership(state.Ownership);
+            // Legacy state files did not record ownership. When in doubt,
+            // prefer the safer Attached default instead of assuming full
+            // lifecycle control over an externally discovered process.
+            return InstanceOwnership.Attached;
+        }
+
+        private static DateTime? ParseUtc(string value)
+        {
+            DateTime parsed;
+            return DateTime.TryParse(value, null, System.Globalization.DateTimeStyles.RoundtripKind, out parsed)
+                ? parsed.ToUniversalTime()
+                : (DateTime?)null;
+        }
 
         private void SetState(InstanceStateKind state, string text)
         {
@@ -1089,22 +1171,29 @@ namespace DeepSeekHarnessManager
             return state == InstanceStateKind.Starting ? 1000 : 5000;
         }
 
-        private void OpenWebUi(int port)
+        private void OpenFrontend(int port)
         {
-            TokenContext context = RuntimeResolver.CreateContext(Config, Plugin, port, String.Empty);
-            string url = AppPaths.Expand(Plugin.Probe.UrlTemplate, context);
+            string url;
+            string frontendError;
+            if (!FrontendLauncher.TryResolve(Config, Plugin, port, out url, out frontendError))
+            {
+                LastError = frontendError;
+                FileLog.Error("Could not open frontend for " + Config.Id + ": " + frontendError);
+                interaction.Show(ManagerMessageKind.Warning, frontendError);
+                return;
+            }
             try
             {
                 ProcessStartInfo info = new ProcessStartInfo(url);
                 info.UseShellExecute = true;
                 Process.Start(info);
-                FileLog.Info("Opened Web UI for " + Config.Id + ": " + url);
+                FileLog.Info("Opened " + Config.Frontend + " frontend for " + Config.Id + ": " + url);
             }
             catch (Exception exception)
             {
                 LastError = exception.Message;
-                FileLog.Error("Could not open Web UI for " + Config.Id + ": " + exception.Message);
-                MessageBox.Show(Localization.Format("Dialog.OpenBrowserFailed", url, exception.Message), Localization.Text("App.Title"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                FileLog.Error("Could not open " + Config.Frontend + " frontend for " + Config.Id + ": " + exception.Message);
+                interaction.Show(ManagerMessageKind.Warning, Localization.Format("Dialog.OpenBrowserFailed", url, exception.Message));
             }
         }
 

@@ -2,10 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Pipes;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace DeepSeekHarnessManager.Tests
 {
@@ -25,6 +27,9 @@ namespace DeepSeekHarnessManager.Tests
             {
                 Run("plugin catalog", TestPluginCatalog);
                 Run("configuration round trip", TestConfiguration);
+                Run("manager service facade", TestManagerServiceFacade);
+                Run("manager interaction routing", TestManagerInteractionRouting);
+                Run("manager control protocol", TestManagerControlProtocol);
                 Run("DSH settings path", TestDshSettingsPath);
                 Run("localization", TestLocalization);
                 Run("semantic versions", TestSemanticVersions);
@@ -34,7 +39,10 @@ namespace DeepSeekHarnessManager.Tests
                 Run("HTTP and process fingerprints", TestInspection);
                 Run("external unhealthy DSH preservation", TestExternalUnhealthyHarnessPreserved);
                 Run("runtime resolution", TestRuntimeResolution);
-                Run("companion patch", TestCompanionPatch);
+                Run("runtime adapter registry", TestRuntimeAdapters);
+                Run("runtime bridge patch", TestRuntimeBridgePatch);
+                Run("runtime bridge manifest alias", TestRuntimeBridgeManifestAlias);
+                Run("frontend launcher", TestFrontendLauncher);
                 Run("bridge protocol", TestBridgeProtocol);
                 Run("log retention", TestLogRetention);
                 Run("npm update check", TestUpdateCheck);
@@ -62,8 +70,8 @@ namespace DeepSeekHarnessManager.Tests
             PluginCatalog catalog = PluginCatalog.Load();
             PluginDefinition plugin = catalog.Get("deepseek-harness-web");
             Assert(plugin.Runtimes.Count == 3, "expected global/source/npx runtimes");
-            Assert(plugin.Companion != null && plugin.Companion.Enabled, "companion must be enabled");
-            Assert(plugin.Companion.BridgeProtocolVersion == 1, "companion bridge protocol version must be 1");
+            Assert(plugin.RuntimeBridge != null && plugin.RuntimeBridge.Enabled, "runtime bridge must be enabled");
+            Assert(plugin.RuntimeBridge.BridgeProtocolVersion == 1, "runtime bridge protocol version must be 1");
             Assert(plugin.MarketplaceUrl == "https://github.com/topics/dsh-plugin", "plugin marketplace URL is missing");
         }
 
@@ -74,6 +82,16 @@ namespace DeepSeekHarnessManager.Tests
             ManagerConfig config = store.LoadOrCreate();
             Assert(config.Instances.Count == 1, "default config should contain one instance");
             Assert(config.Instances[0].Runtime == "auto", "default runtime should be auto");
+            Assert(config.Instances[0].RuntimeType == InstanceModel.RuntimeTypeWindows, "default runtime type should be windows");
+            Assert(config.Instances[0].Frontend == InstanceModel.FrontendWeb, "default frontend should be web");
+            Assert(config.TrayEnabled.HasValue && config.TrayEnabled.Value, "default tray mode should be enabled");
+            Assert(!config.StartWithWindows.Value, "Start with Windows should default to false");
+            Assert(!config.DesktopShortcut.Value, "desktop shortcut should default to false in a source-created config");
+            config.TrayEnabled = false;
+            store.Save(config);
+            Assert(!store.LoadOrCreate().TrayEnabled.Value, "disabled tray mode was not preserved");
+            config.TrayEnabled = true;
+            store.Save(config);
             store.Save(config);
             ManagerConfig read = store.LoadOrCreate();
             Assert(read.DefaultInstanceId == config.DefaultInstanceId, "config round trip failed");
@@ -85,6 +103,18 @@ namespace DeepSeekHarnessManager.Tests
             try { store.Save(config); } catch (InvalidDataException) { rejected = true; }
             Assert(rejected, "duplicate preferred ports must be rejected");
             config.Instances.Remove(duplicatePort);
+
+            InstanceConfig reserved = CreateInstance(catalog.Get("deepseek-harness-web"), 4099);
+            reserved.Id = "wsl-reserved";
+            reserved.RuntimeType = InstanceModel.RuntimeTypeWsl;
+            reserved.Frontend = InstanceModel.FrontendOhDsh;
+            config.Instances.Add(reserved);
+            store.Save(config);
+            ManagerConfig reservedRead = store.LoadOrCreate();
+            Assert(reservedRead.Instances[reservedRead.Instances.Count - 1].RuntimeType == InstanceModel.RuntimeTypeWsl, "wsl runtime type must be accepted as a reserved value");
+            Assert(reservedRead.Instances[reservedRead.Instances.Count - 1].Frontend == InstanceModel.FrontendOhDsh, "oh-dsh frontend must be accepted as a reserved value");
+            config.Instances.Remove(reserved);
+            store.Save(config);
         }
 
         private static void TestSemanticVersions()
@@ -96,6 +126,108 @@ namespace DeepSeekHarnessManager.Tests
             DateTime attempt = DateTime.UtcNow.AddHours(-10);
             DateTime next = UpdateManager.NextAutomaticCheckUtc(attempt);
             Assert(Math.Abs((next - attempt.AddHours(24)).TotalSeconds) < 2, "running manager update schedule should preserve the 24-hour interval");
+        }
+
+        private static void TestManagerServiceFacade()
+        {
+            Localization.Initialize("en-US");
+            PluginCatalog catalog = PluginCatalog.Load();
+            ConfigurationStore store = new ConfigurationStore(catalog);
+            ManagerConfig config = store.LoadOrCreate();
+            using (ManagerService service = new ManagerService(config, catalog, store, null, SilentManagerInteraction.Instance))
+            {
+                ManagerSnapshot snapshot = service.GetSnapshot();
+                Assert(snapshot.Instances.Count == 1, "manager service should expose one default instance");
+                Assert(snapshot.DefaultInstanceId == snapshot.Instances[0].Id, "manager service default instance mismatch");
+                Assert(snapshot.Instances[0].State == InstanceStateKind.Stopped, "new manager service instance should start stopped");
+                Assert(snapshot.Instances[0].RuntimeType == InstanceModel.RuntimeTypeWindows, "manager snapshot should expose runtime type");
+                Assert(snapshot.Instances[0].Ownership == InstanceModel.OwnershipAttached, "unowned stopped instance should default to attached");
+                Assert(snapshot.Instances[0].Frontend == InstanceModel.FrontendWeb, "manager snapshot should expose frontend");
+                Assert(snapshot.TrayEnabled, "manager snapshot should expose tray mode");
+                Assert(!snapshot.StartWithWindows, "manager snapshot should expose autostart mode");
+                Assert(!snapshot.DesktopShortcut, "manager snapshot should expose shortcut mode");
+                string details = service.GetInstanceDetails(snapshot.DefaultInstanceId);
+                Assert(details.IndexOf(snapshot.Instances[0].Name, StringComparison.Ordinal) >= 0, "manager service details should contain the instance name");
+                string diagnostics = service.GetDiagnosticsText();
+                Assert(diagnostics.IndexOf("Manager version:", StringComparison.Ordinal) >= 0, "diagnostics should contain the manager version");
+                Assert(diagnostics.IndexOf(snapshot.Instances[0].Name, StringComparison.Ordinal) >= 0, "diagnostics should contain the instance name");
+            }
+        }
+
+        private static void TestManagerInteractionRouting()
+        {
+            PluginCatalog catalog = PluginCatalog.Load();
+            PluginDefinition plugin = catalog.Get("deepseek-harness-web");
+            ConfigurationStore store = new ConfigurationStore(catalog);
+            ManagerConfig config = store.LoadOrCreate();
+            InstanceController controller = new InstanceController(CreateInstance(plugin, 3080), plugin, store);
+            controller.UpdateInfo = new UpdateInfo { UpdateAvailable = false };
+            RecordingInteraction interaction = new RecordingInteraction();
+            UpdateManager updates = new UpdateManager(store, config, interaction);
+            bool accepted = updates.ExecuteConfirmedUpdate(controller);
+            Assert(!accepted, "an unavailable update must not be accepted");
+            Assert(interaction.InformationCount == 1, "update unavailable should route through the interaction boundary");
+        }
+
+        private static void TestManagerControlProtocol()
+        {
+            PluginCatalog catalog = PluginCatalog.Load();
+            ConfigurationStore store = new ConfigurationStore(catalog);
+            ManagerConfig config = store.LoadOrCreate();
+            using (ManagerService service = new ManagerService(config, catalog, store, null, SilentManagerInteraction.Instance))
+            using (ManagerControlServer server = new ManagerControlServer(service, "dsh-windows-manager-test-" + Guid.NewGuid().ToString("N")))
+            {
+                server.Start();
+                Dictionary<string, object> version = SendControl(server, "{\"protocolVersion\":1,\"command\":\"getVersion\"}");
+                Assert(Convert.ToBoolean(version["ok"]), "getVersion should succeed");
+                Assert(BridgeProtocol.GetInt(version, "protocolVersion") == ManagerControlProtocol.CurrentProtocolVersion, "control protocol version mismatch");
+                Assert(!String.IsNullOrWhiteSpace(BridgeProtocol.GetString(version, "managerVersion")), "manager version is missing");
+
+                Dictionary<string, object> list = SendControl(server, "{\"protocolVersion\":1,\"command\":\"listInstances\"}");
+                Assert(Convert.ToBoolean(list["ok"]), "listInstances should succeed");
+                System.Collections.IEnumerable instances = BridgeProtocol.GetValue(list, "instances") as System.Collections.IEnumerable;
+                int instanceCount = 0;
+                if (instances != null) foreach (object item in instances) instanceCount++;
+                Assert(instanceCount == 1, "listInstances should return the configured instance");
+
+                Dictionary<string, object> status = SendControl(server, "{\"protocolVersion\":1,\"command\":\"getStatus\"}");
+                Assert(Convert.ToBoolean(status["ok"]), "getStatus should succeed");
+                Assert(BridgeProtocol.GetString(status, "runtime") == InstanceModel.RuntimeTypeWindows, "getStatus runtime type mismatch");
+                Assert(BridgeProtocol.GetString(status, "frontend") == InstanceModel.FrontendWeb, "getStatus frontend mismatch");
+                Assert(BridgeProtocol.GetString(status, "ownership") == InstanceModel.OwnershipAttached, "getStatus ownership mismatch");
+                Assert(Convert.ToBoolean(status["trayEnabled"]), "getStatus trayEnabled mismatch");
+
+                Dictionary<string, object> unknown = SendControl(server, "{\"protocolVersion\":1,\"command\":\"runCommand\"}");
+                Assert(!Convert.ToBoolean(unknown["ok"]), "unknown commands must be rejected");
+                Dictionary<string, object> unknownError = BridgeProtocol.GetValue(unknown, "error") as Dictionary<string, object>;
+                Assert(unknownError != null && BridgeProtocol.GetString(unknownError, "code") == "unknown-command", "unknown command error code missing");
+
+                Dictionary<string, object> unsupported = SendControl(server, "{\"protocolVersion\":99,\"command\":\"getVersion\"}");
+                Assert(!Convert.ToBoolean(unsupported["ok"]), "unsupported protocol versions must be rejected");
+                Dictionary<string, object> unsupportedError = BridgeProtocol.GetValue(unsupported, "error") as Dictionary<string, object>;
+                Assert(unsupportedError != null && BridgeProtocol.GetString(unsupportedError, "code") == "protocol-version-unsupported", "unsupported protocol error code missing");
+            }
+        }
+
+        private static Dictionary<string, object> SendControl(ManagerControlServer server, string json)
+        {
+            using (NamedPipeClientStream pipe = new NamedPipeClientStream(".", server.Name, PipeDirection.InOut, PipeOptions.Asynchronous))
+            {
+                pipe.Connect(3000);
+                pipe.ReadMode = PipeTransmissionMode.Byte;
+                using (StreamWriter writer = new StreamWriter(pipe, new UTF8Encoding(false), 4096, true))
+                {
+                    writer.NewLine = "\n";
+                    writer.WriteLine(json);
+                    writer.Flush();
+                }
+                Task<string> readTask = Task.Factory.StartNew(delegate
+                {
+                    using (StreamReader reader = new StreamReader(pipe, Encoding.UTF8, false, 4096, true)) return reader.ReadLine();
+                });
+                if (!readTask.Wait(5000)) throw new TimeoutException("control test request timed out");
+                return JsonStore.Deserialize<Dictionary<string, object>>(readTask.Result);
+            }
         }
 
         private static void TestDshSettingsPath()
@@ -129,6 +261,8 @@ namespace DeepSeekHarnessManager.Tests
             Assert(Localization.CurrentLanguage == "zh-CN", "Chinese locale was not selected");
             Assert(Localization.Text("Menu.OpenWeb") == "\u6253\u5f00 Web UI", "Chinese locale value is missing");
             Assert(Localization.Text("Menu.OpenDshSettings") == "\u6253\u5f00 DSH \u914d\u7f6e\u6587\u4ef6", "DSH settings label is missing");
+            Assert(Localization.Text("Menu.OpenOhDsh") == "打开 oh-dsh", "oh-dsh menu label is missing");
+            Assert(Localization.Text("Menu.CopyDiagnostics") == "复制诊断信息", "copy diagnostics menu label is missing");
             Assert(Localization.Text("Missing.Test.Key") == "Missing.Test.Key", "missing locale keys should return their key");
             Localization.Initialize("auto");
         }
@@ -250,6 +384,23 @@ namespace DeepSeekHarnessManager.Tests
             Assert(npx.Arguments.Contains("@deepseek-ai/dsh@0.1.0-rc.6"), "npx runtime must pin the selected version");
         }
 
+        private static void TestRuntimeAdapters()
+        {
+            PluginCatalog catalog = PluginCatalog.Load();
+            PluginDefinition plugin = catalog.Get("deepseek-harness-web");
+            InstanceConfig instance = CreateInstance(plugin, 3080);
+            IRuntimeAdapter adapter = RuntimeAdapters.Get(instance);
+            Assert(adapter is WindowsRuntimeAdapter, "windows runtime should resolve to WindowsRuntimeAdapter");
+            Assert(adapter.RuntimeType == InstanceModel.RuntimeTypeWindows, "runtime adapter type mismatch");
+            RuntimeResolution viaAdapter = adapter.Resolve(instance, plugin, 3080, String.Empty);
+            RuntimeResolution direct = RuntimeResolver.Resolve(instance, plugin, 3080, String.Empty);
+            Assert(viaAdapter.CommandPath == direct.CommandPath, "windows adapter should preserve runtime resolution");
+            instance.RuntimeType = InstanceModel.RuntimeTypeWsl;
+            bool rejected = false;
+            try { RuntimeAdapters.Get(instance); } catch (InvalidOperationException) { rejected = true; }
+            Assert(rejected, "wsl runtime must be reserved until a WSL adapter is implemented");
+        }
+
         private static void TestExternalUnhealthyHarnessPreserved()
         {
             string node = AppPaths.FindOnPath("node.exe");
@@ -278,7 +429,7 @@ namespace DeepSeekHarnessManager.Tests
                     PluginDefinition plugin = catalog.Get("deepseek-harness-web");
                     ConfigurationStore store = new ConfigurationStore(catalog);
                     InstanceController controller = new InstanceController(CreateInstance(plugin, port), plugin, store);
-                    controller.OpenOrStart(null);
+                    controller.OpenOrStart();
                     Assert(controller.State == InstanceStateKind.Starting, "unhealthy external DSH should enter the starting state");
                     System.Reflection.FieldInfo deadlineField = typeof(InstanceController).GetField("startDeadlineUtc", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
                     deadlineField.SetValue(controller, DateTime.UtcNow.AddSeconds(-1));
@@ -294,16 +445,45 @@ namespace DeepSeekHarnessManager.Tests
             }
         }
 
-        private static void TestCompanionPatch()
+        private static void TestRuntimeBridgePatch()
         {
             PluginCatalog catalog = PluginCatalog.Load();
             PluginDefinition plugin = catalog.Get("deepseek-harness-web");
-            CompanionLaunch launch = CompanionPatch.Create(CreateInstance(plugin, 3080), plugin);
+            RuntimeBridgeLaunch launch = RuntimeBridgePatch.Create(CreateInstance(plugin, 3080), plugin);
             Assert(File.Exists(launch.PatchPath), "patch was not created");
             Assert(launch.Token.Length == 64, "token must be 256-bit hex");
             string yaml = File.ReadAllText(launch.PatchPath);
-            Assert(yaml.IndexOf("windows-lifecycle.mjs", StringComparison.Ordinal) >= 0, "patch has no companion module");
+            Assert(yaml.IndexOf("windows-lifecycle.mjs", StringComparison.Ordinal) >= 0, "patch has no runtime bridge module");
             Assert(yaml.IndexOf("profile:", StringComparison.Ordinal) >= 0, "patch does not record the launched profile");
+        }
+
+        private static void TestFrontendLauncher()
+        {
+            PluginCatalog catalog = PluginCatalog.Load();
+            PluginDefinition plugin = catalog.Get("deepseek-harness-web");
+            InstanceConfig instance = CreateInstance(plugin, 3080);
+            string url;
+            string error;
+            Assert(FrontendLauncher.TryResolve(instance, plugin, 3080, out url, out error), "web frontend should resolve");
+            Assert(url == "http://127.0.0.1:3080/", "web frontend URL mismatch");
+            instance.Frontend = InstanceModel.FrontendOhDsh;
+            Assert(!FrontendLauncher.TryResolve(instance, plugin, 3080, out url, out error), "oh-dsh should not be silently opened");
+            Assert(error.IndexOf(InstanceModel.FrontendOhDsh, StringComparison.Ordinal) >= 0, "oh-dsh not-configured error should name the frontend");
+            instance.Frontend = InstanceModel.FrontendCustom;
+            Assert(!FrontendLauncher.TryResolve(instance, plugin, 3080, out url, out error), "custom frontend should not be silently opened");
+        }
+
+        private static void TestRuntimeBridgeManifestAlias()
+        {
+            string legacy = "{\"Companion\":{\"Enabled\":true,\"Module\":\"cordis/windows-lifecycle.mjs\",\"EntryId\":\"windows-lifecycle\",\"BridgeProtocolVersion\":1}}";
+            PluginDefinition legacyPlugin = JsonStore.Deserialize<PluginDefinition>(legacy);
+            Assert(legacyPlugin.RuntimeBridge != null && legacyPlugin.RuntimeBridge.Enabled, "legacy Companion manifest key was not mapped to RuntimeBridge");
+            Assert(legacyPlugin.RuntimeBridge.BridgeProtocolVersion == 1, "legacy Companion bridge protocol version was not preserved");
+
+            string current = "{\"RuntimeBridge\":{\"Enabled\":true,\"Module\":\"cordis/windows-lifecycle.mjs\",\"EntryId\":\"windows-lifecycle\",\"BridgeProtocolVersion\":1}}";
+            PluginDefinition currentPlugin = JsonStore.Deserialize<PluginDefinition>(current);
+            Assert(currentPlugin.RuntimeBridge != null && currentPlugin.RuntimeBridge.Enabled, "RuntimeBridge manifest key was not read");
+            Assert(currentPlugin.RuntimeBridge.Module == "cordis/windows-lifecycle.mjs", "RuntimeBridge module was not read");
         }
 
         private static void TestBridgeProtocol()
@@ -322,7 +502,7 @@ namespace DeepSeekHarnessManager.Tests
             Assert(BridgeProtocol.GetString(roundTrip.Payload, "pong") == "True", "bridge payload round trip failed");
 
             BridgeMessage legacy = BridgeProtocol.Deserialize("{\"ok\":false,\"error\":\"unauthorized\"}");
-            Assert(!BridgeProtocol.IsVersioned(legacy), "legacy companion responses must be detected as unversioned");
+            Assert(!BridgeProtocol.IsVersioned(legacy), "legacy shutdown responses must be detected as unversioned");
             Assert(BridgeProtocol.ErrorCode(legacy) == "unauthorized", "legacy string error code was not parsed");
         }
 
@@ -351,6 +531,13 @@ namespace DeepSeekHarnessManager.Tests
             File.SetLastWriteTimeUtc(expiredOut, expiredUtc);
             File.SetLastWriteTimeUtc(expiredErr, expiredUtc);
 
+            string multiOut = Path.Combine(logDirectory, "source-dev-" + expiredUtc.ToString("yyyyMMdd-HHmmss") + ".out.log");
+            string multiErr = Path.Combine(logDirectory, "source-dev-" + expiredUtc.ToString("yyyyMMdd-HHmmss") + ".err.log");
+            File.WriteAllText(multiOut, "old" + Environment.NewLine);
+            File.WriteAllText(multiErr, "old" + Environment.NewLine);
+            File.SetLastWriteTimeUtc(multiOut, expiredUtc);
+            File.SetLastWriteTimeUtc(multiErr, expiredUtc);
+
             byte[] filler = new byte[4096];
             using (FileStream stream = File.Create(AppPaths.ManagerLog))
             {
@@ -362,6 +549,7 @@ namespace DeepSeekHarnessManager.Tests
 
             Assert(File.Exists(AppPaths.ManagerLog + ".1"), "manager.log was not rolled over");
             Assert(!File.Exists(expiredOut) && !File.Exists(expiredErr), "expired instance logs were not removed");
+            Assert(!File.Exists(multiOut) && !File.Exists(multiErr), "expired non-web instance logs were not removed");
             string[] remaining = Directory.GetFiles(logDirectory, "web-*.log");
             Assert(remaining.Length <= FileLog.MaxInstanceLogPairs * 2, "instance log count exceeded the retention bound");
         }
@@ -564,7 +752,7 @@ namespace DeepSeekHarnessManager.Tests
             instance.Runtime = "global";
             instance.Workspace = AppPaths.DataDirectory;
             instance.DshHome = String.Empty;
-            CompanionLaunch bridge = CompanionPatch.Create(instance, plugin);
+            RuntimeBridgeLaunch bridge = RuntimeBridgePatch.Create(instance, plugin);
             RuntimeResolution runtime = RuntimeResolver.Resolve(instance, plugin, port, bridge.PatchPath);
             string output = Path.Combine(AppPaths.LogDirectory, "integration.out.log");
             string error = Path.Combine(AppPaths.LogDirectory, "integration.err.log");
@@ -586,6 +774,26 @@ namespace DeepSeekHarnessManager.Tests
                 Assert(GracefulShutdownClient.Request(bridge.PipeName, bridge.Token, 3000, out shutdownError), "shutdown bridge failed: " + shutdownError);
                 using (Process listener = Process.GetProcessById(running.ProcessId)) Assert(listener.WaitForExit(8000), "DSH did not exit after graceful request");
                 Assert(PortMap.GetListenerProcessIds(port).Count == 0, "port remained occupied after graceful shutdown");
+
+                InstanceController managerController = new InstanceController(instance, plugin, store, SilentManagerInteraction.Instance);
+                managerController.Start(port, false);
+                Assert(managerController.Ownership == InstanceOwnership.Managed, "manager-launched instance should be owned");
+                Assert(managerController.ProcessId > 0, "manager-launched instance should record its PID");
+                Assert(managerController.StartedAtUtc.HasValue, "manager-launched instance should record its start time");
+                DateTime managedDeadline = DateTime.UtcNow.AddSeconds(90);
+                while (DateTime.UtcNow < managedDeadline && managerController.State != InstanceStateKind.Running)
+                {
+                    managerController.Tick();
+                    if (managerController.State == InstanceStateKind.Error) break;
+                    if (managerController.State == InstanceStateKind.Running) break;
+                    Thread.Sleep(500);
+                }
+                Assert(managerController.State == InstanceStateKind.Running, "manager-launched DSH did not become ready");
+                Assert(managerController.Ownership == InstanceOwnership.Managed, "ownership should remain managed while DSH runs");
+                string managedStopError;
+                Assert(managerController.TryGracefulStop(out managedStopError), "manager-owned graceful stop failed: " + managedStopError);
+                Assert(managerController.State == InstanceStateKind.Stopped, "manager-owned instance did not return to stopped");
+                Assert(managerController.Ownership == InstanceOwnership.Attached, "stopped instance should no longer claim managed ownership");
             }
             finally
             {
@@ -606,6 +814,8 @@ namespace DeepSeekHarnessManager.Tests
             instance.PluginId = plugin.Id;
             instance.Profile = "web";
             instance.Runtime = "auto";
+            instance.RuntimeType = InstanceModel.RuntimeTypeWindows;
+            instance.Frontend = InstanceModel.FrontendWeb;
             instance.SourceRoot = String.Empty;
             instance.Workspace = AppPaths.DataDirectory;
             instance.PreferredPort = port;
@@ -663,6 +873,44 @@ namespace DeepSeekHarnessManager.Tests
         private static void Assert(bool condition, string message)
         {
             if (!condition) throw new Exception(message);
+        }
+
+        private sealed class RecordingInteraction : IManagerInteraction
+        {
+            public int InformationCount;
+            public int WarningCount;
+            public int ErrorCount;
+            public int ConfirmCount;
+
+            public void Show(ManagerMessageKind kind, string message)
+            {
+                if (kind == ManagerMessageKind.Error) ErrorCount++;
+                else if (kind == ManagerMessageKind.Warning) WarningCount++;
+                else InformationCount++;
+            }
+
+            public bool Confirm(ManagerConfirmKind kind, string message, string title)
+            {
+                ConfirmCount++;
+                return false;
+            }
+
+            public ConflictChoice ResolvePortConflict(PortInspection inspection, int alternatePort)
+            {
+                ConflictChoice choice = new ConflictChoice();
+                choice.Action = ConflictAction.Cancel;
+                return choice;
+            }
+
+            public bool ConfirmForceEnd(ProcessIdentity process)
+            {
+                return false;
+            }
+
+            public UpdateOutcome WaitForUpdate(string title, System.Threading.Tasks.Task<UpdateOutcome> updateTask)
+            {
+                return updateTask == null ? new UpdateOutcome { Error = "missing task" } : updateTask.Result;
+            }
         }
     }
 }

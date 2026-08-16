@@ -25,6 +25,16 @@ DSH Web UI 使用 `--host 127.0.0.1` 启动。生命周期桥接机制使用本�
 
 外部启动的 DSH 进程若未进入 Web 就绪状态，不会因就绪等待超时而被自动终止。启动清理仅限当前管理器操作所启动的进程。
 
+## Manager Control 协议
+
+Manager 对 CLI 和第三方前端暴露一个独立的本地命名管道：
+
+```text
+\\.\pipe\dsh-windows-manager-control-{user-sid}
+```
+
+它只允许当前 Windows 用户读写，不监听 TCP，不暴露到局域网或互联网。协议 v1 仅包含 `getVersion`、`getStatus`、`listInstances`、`start`、`stop`、`restart`、`open`，所有响应都带 `protocolVersion`。该协议不提供任意命令执行、PowerShell、npm 代理或任意文件读写。它只允许一次请求一个 JSON 行，输入上限 64 KiB。
+
 ## 优雅关闭与 IPC
 
 每个由管理器启动的 DSH 实例都会通过生成的本地补丁，获得唯一的命名管道名称和随机生成的 256 位十六进制令牌。命名管道只允许已认证的新版 `ping`、`getStatus`、`getRuntimeInfo` 和 `shutdown` 命令；DSH 端插件验证令牌后才会调用 `ctx.appExit(0)`。

@@ -103,7 +103,7 @@
     "GithubBranch": "master",
     "BundledVersion": "0.1.0-rc.6"
   },
-  "Companion": {
+  "RuntimeBridge": {
     "Enabled": true,
     "Module": "cordis/windows-lifecycle.mjs",
     "EntryId": "windows-lifecycle",

@@ -6,19 +6,6 @@ using System.Windows.Forms;
 
 namespace DeepSeekHarnessManager
 {
-    public enum ConflictAction
-    {
-        Cancel,
-        UseAlternate,
-        EndProcess
-    }
-
-    public sealed class ConflictChoice
-    {
-        public ConflictAction Action { get; set; }
-        public int Port { get; set; }
-    }
-
     public static class ManagerDialogs
     {
         public static ConflictChoice ShowPortConflict(IWin32Window owner, PortInspection inspection, int alternatePort)
@@ -200,6 +187,48 @@ namespace DeepSeekHarnessManager
             else result = task.Result;
             DialogResult = DialogResult.OK;
             Close();
+        }
+    }
+    public sealed class WinFormsManagerInteraction : IManagerInteraction
+    {
+        public void Show(ManagerMessageKind kind, string message)
+        {
+            MessageBoxIcon icon = kind == ManagerMessageKind.Error
+                ? MessageBoxIcon.Error
+                : (kind == ManagerMessageKind.Warning ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
+            MessageBox.Show(message, Localization.Text("App.Title"), MessageBoxButtons.OK, icon);
+        }
+
+        public bool Confirm(ManagerConfirmKind kind, string message, string title)
+        {
+            MessageBoxIcon icon = kind == ManagerConfirmKind.Warning
+                ? MessageBoxIcon.Warning
+                : (kind == ManagerConfirmKind.Information ? MessageBoxIcon.Information : MessageBoxIcon.Question);
+            DialogResult result = MessageBox.Show(message, title, MessageBoxButtons.YesNo, icon);
+            return result == DialogResult.Yes;
+        }
+
+        public ConflictChoice ResolvePortConflict(PortInspection inspection, int alternatePort)
+        {
+            return ManagerDialogs.ShowPortConflict(null, inspection, alternatePort);
+        }
+
+        public bool ConfirmForceEnd(ProcessIdentity process)
+        {
+            string name = process == null ? String.Empty : (process.Name ?? String.Empty);
+            string path = process == null ? String.Empty : (process.ImagePath ?? String.Empty);
+            int processId = process == null ? 0 : process.ProcessId;
+            DialogResult result = MessageBox.Show(
+                Localization.Format("Dialog.ForceEnd", processId, name, path),
+                Localization.Text("Dialog.ForceEndTitle"),
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning);
+            return result == DialogResult.Yes;
+        }
+
+        public UpdateOutcome WaitForUpdate(string title, Task<UpdateOutcome> updateTask)
+        {
+            return UpdateProgressForm.Run(null, title, updateTask);
         }
     }
 }

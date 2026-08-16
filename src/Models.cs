@@ -15,10 +15,42 @@ namespace DeepSeekHarnessManager
         Error
     }
 
+    public enum InstanceOwnership
+    {
+        Attached,
+        Managed
+    }
+
+    public static class InstanceModel
+    {
+        public const string RuntimeTypeWindows = "windows";
+        public const string RuntimeTypeWsl = "wsl";
+        public const string OwnershipManaged = "managed";
+        public const string OwnershipAttached = "attached";
+        public const string FrontendWeb = "web";
+        public const string FrontendOhDsh = "oh-dsh";
+        public const string FrontendCustom = "custom";
+
+        public static string ToText(InstanceOwnership ownership)
+        {
+            return ownership == InstanceOwnership.Managed ? OwnershipManaged : OwnershipAttached;
+        }
+
+        public static InstanceOwnership ParseOwnership(string value)
+        {
+            return String.Equals(value, OwnershipManaged, StringComparison.OrdinalIgnoreCase)
+                ? InstanceOwnership.Managed
+                : InstanceOwnership.Attached;
+        }
+    }
+
     public sealed class ManagerConfig
     {
         public int SchemaVersion { get; set; }
         public string Language { get; set; }
+        public bool? TrayEnabled { get; set; }
+        public bool? StartWithWindows { get; set; }
+        public bool? DesktopShortcut { get; set; }
         public string DefaultInstanceId { get; set; }
         public List<InstanceConfig> Instances { get; set; }
     }
@@ -30,6 +62,8 @@ namespace DeepSeekHarnessManager
         public string PluginId { get; set; }
         public string Profile { get; set; }
         public string Runtime { get; set; }
+        public string RuntimeType { get; set; }
+        public string Frontend { get; set; }
         public string SourceRoot { get; set; }
         public string Workspace { get; set; }
         public string DshHome { get; set; }
@@ -49,7 +83,16 @@ namespace DeepSeekHarnessManager
         public List<string> ProcessPatterns { get; set; }
         public List<RuntimeDefinition> Runtimes { get; set; }
         public UpdateDefinition Update { get; set; }
-        public CompanionDefinition Companion { get; set; }
+        public RuntimeBridgeDefinition RuntimeBridge { get; set; }
+        // Legacy plugin manifests (<= 0.2.1) used "Companion". Keep reading
+        // that key so installed layouts upgrade without reconfiguration;
+        // new manifests use "RuntimeBridge" only.
+        [System.Web.Script.Serialization.ScriptIgnore]
+        public RuntimeBridgeDefinition Companion
+        {
+            get { return RuntimeBridge; }
+            set { if (RuntimeBridge == null) RuntimeBridge = value; }
+        }
         [System.Web.Script.Serialization.ScriptIgnore]
         public string DirectoryPath { get; set; }
     }
@@ -84,7 +127,7 @@ namespace DeepSeekHarnessManager
         public string BundledVersion { get; set; }
     }
 
-    public sealed class CompanionDefinition
+    public sealed class RuntimeBridgeDefinition
     {
         public bool Enabled { get; set; }
         public string Module { get; set; }
@@ -145,6 +188,8 @@ namespace DeepSeekHarnessManager
         public int ProcessId { get; set; }
         public string ProcessImagePath { get; set; }
         public string ProcessStartTimeUtc { get; set; }
+        public string StartedAtUtc { get; set; }
+        public string Ownership { get; set; }
         public string RuntimeId { get; set; }
         public string PipeName { get; set; }
         public string PipeToken { get; set; }
@@ -212,13 +257,37 @@ namespace DeepSeekHarnessManager
         public string Detail { get; set; }
     }
 
-    public sealed class ManagedProcess
+    public sealed class ManagedProcess : IRuntimeProcess
     {
         public Process RootProcess { get; set; }
         public string OutputLog { get; set; }
         public string ErrorLog { get; set; }
         public event EventHandler Exited;
         public bool ExitObserved { get; private set; }
+
+        public int ProcessId
+        {
+            get
+            {
+                try { return RootProcess == null ? 0 : RootProcess.Id; }
+                catch { return 0; }
+            }
+        }
+
+        public bool HasExited
+        {
+            get
+            {
+                try { return RootProcess == null || RootProcess.HasExited; }
+                catch { return true; }
+            }
+        }
+
+        public bool WaitForExit(int timeoutMilliseconds)
+        {
+            try { return RootProcess != null && RootProcess.WaitForExit(timeoutMilliseconds); }
+            catch { return true; }
+        }
 
         public void SignalExit()
         {
@@ -228,6 +297,17 @@ namespace DeepSeekHarnessManager
             {
                 try { handler(this, EventArgs.Empty); }
                 catch { }
+            }
+        }
+
+        public void Dispose()
+        {
+            try
+            {
+                if (RootProcess != null) RootProcess.Dispose();
+            }
+            catch
+            {
             }
         }
     }

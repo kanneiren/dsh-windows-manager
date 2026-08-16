@@ -5,7 +5,6 @@ using System.Net;
 using System.Text;
 using System.Threading.Tasks;
 using System.Web.Script.Serialization;
-using System.Windows.Forms;
 
 namespace DeepSeekHarnessManager
 {
@@ -15,9 +14,15 @@ namespace DeepSeekHarnessManager
         private readonly ManagerConfig managerConfig;
         private readonly Func<string, IList<string>, string, int, CommandResult> commandExecutor;
         private readonly Func<InstanceConfig, PluginDefinition, ConfigurationStore, string, string, CommandResult> smokeTester;
+        private readonly IManagerInteraction interaction;
 
         public UpdateManager(ConfigurationStore store, ManagerConfig config)
-            : this(store, config, CommandRunner.RunCapture, RuntimeSmokeTest.Run)
+            : this(store, config, SilentManagerInteraction.Instance)
+        {
+        }
+
+        public UpdateManager(ConfigurationStore store, ManagerConfig config, IManagerInteraction managerInteraction)
+            : this(store, config, managerInteraction, CommandRunner.RunCapture, RuntimeSmokeTest.Run)
         {
         }
 
@@ -26,9 +31,20 @@ namespace DeepSeekHarnessManager
             ManagerConfig config,
             Func<string, IList<string>, string, int, CommandResult> executeCommand,
             Func<InstanceConfig, PluginDefinition, ConfigurationStore, string, string, CommandResult> runSmokeTest)
+            : this(store, config, SilentManagerInteraction.Instance, executeCommand, runSmokeTest)
+        {
+        }
+
+        internal UpdateManager(
+            ConfigurationStore store,
+            ManagerConfig config,
+            IManagerInteraction managerInteraction,
+            Func<string, IList<string>, string, int, CommandResult> executeCommand,
+            Func<InstanceConfig, PluginDefinition, ConfigurationStore, string, string, CommandResult> runSmokeTest)
         {
             configurationStore = store;
             managerConfig = config;
+            interaction = managerInteraction ?? SilentManagerInteraction.Instance;
             commandExecutor = executeCommand;
             smokeTester = runSmokeTest;
             LogPendingJournals();
@@ -48,43 +64,42 @@ namespace DeepSeekHarnessManager
 
         public UpdateInfo Check(InstanceController controller, bool force)
         {
-            RuntimeResolution runtime = RuntimeResolver.Resolve(controller.Config, controller.Plugin, controller.Config.PreferredPort, String.Empty);
+            RuntimeResolution runtime = RuntimeAdapters.Resolve(controller.Config, controller.Plugin, controller.Config.PreferredPort, String.Empty);
             if (String.Equals(runtime.Definition.Kind, "source", StringComparison.OrdinalIgnoreCase))
                 return CheckSource(controller, runtime, force);
             return CheckRegistry(controller, runtime, force);
         }
 
-        public bool ExecuteConfirmedUpdate(InstanceController controller, IWin32Window owner)
+        public bool ExecuteConfirmedUpdate(InstanceController controller)
         {
             UpdateInfo info = controller.UpdateInfo;
             if (info == null || !info.UpdateAvailable)
             {
-                MessageBox.Show(owner, Localization.Text("Update.None"), Localization.Text("App.Title"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+                interaction.Show(ManagerMessageKind.Information, Localization.Text("Update.None"));
                 return false;
             }
             RuntimeResolution runtime;
-            try { runtime = RuntimeResolver.Resolve(controller.Config, controller.Plugin, controller.Config.PreferredPort, String.Empty); }
+            try { runtime = RuntimeAdapters.Resolve(controller.Config, controller.Plugin, controller.Config.PreferredPort, String.Empty); }
             catch (Exception exception)
             {
-                MessageBox.Show(owner, exception.Message, Localization.Text("App.Title"), MessageBoxButtons.OK, MessageBoxIcon.Error);
+                interaction.Show(ManagerMessageKind.Error, exception.Message);
                 return false;
             }
-            DialogResult confirmation = MessageBox.Show(owner,
+            if (!interaction.Confirm(ManagerConfirmKind.Question,
                 Localization.Format("Update.Confirm", controller.Config.Name, info.InstalledVersion, info.LatestVersion),
-                Localization.Text("Update.ConfirmTitle"), MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-            if (confirmation != DialogResult.Yes) return false;
+                Localization.Text("Update.ConfirmTitle"))) return false;
             bool wasRunning = controller.State == InstanceStateKind.Running || controller.State == InstanceStateKind.Starting || controller.State == InstanceStateKind.Stopping;
             int restartPort = controller.ActivePort > 0 ? controller.ActivePort : controller.Config.PreferredPort;
-            if (wasRunning && !controller.Stop(owner, false)) return false;
+            if (wasRunning && !controller.Stop(false)) return false;
 
             controller.SetUpdating(true, "Updating to " + info.LatestVersion);
             Task<UpdateOutcome> task = Task.Factory.StartNew(delegate { return ExecuteTransaction(runtime, controller, info.LatestVersion); });
-            UpdateOutcome outcome = UpdateProgressForm.Run(owner, Localization.Text("Update.ProgressTitle"), task);
+            UpdateOutcome outcome = interaction.WaitForUpdate(Localization.Text("Update.ProgressTitle"), task);
             if (outcome == null) outcome = new UpdateOutcome { Error = Localization.Text("Update.Incomplete") };
             WriteFinalCache(controller, runtime, info.LatestVersion, outcome);
 
             controller.InstalledVersion = String.IsNullOrWhiteSpace(outcome.FinalVersion)
-                ? RuntimeResolver.ResolveInstalledVersion(controller.Config, controller.Plugin)
+                ? RuntimeAdapters.ResolveInstalledVersion(controller.Config, controller.Plugin)
                 : outcome.FinalVersion;
             controller.UpdateInfo = new UpdateInfo
             {
@@ -98,24 +113,24 @@ namespace DeepSeekHarnessManager
 
             if (outcome.Succeeded)
             {
-                DialogResult restart = MessageBox.Show(owner, Localization.Text("Update.Completed"), Localization.Text("App.Title"), MessageBoxButtons.YesNo, MessageBoxIcon.Information);
-                if (restart == DialogResult.Yes) controller.Start(restartPort, true, owner);
+                if (interaction.Confirm(ManagerConfirmKind.Information, Localization.Text("Update.Completed"), Localization.Text("App.Title")))
+                    controller.Start(restartPort, true);
                 return true;
             }
 
             if (outcome.RollbackSucceeded)
             {
-                DialogResult restart = MessageBox.Show(owner,
+                if (interaction.Confirm(ManagerConfirmKind.Warning,
                     Localization.Format("Update.RolledBack", outcome.Error, outcome.PreviousVersion),
-                    Localization.Text("App.Title"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
-                if (restart == DialogResult.Yes) controller.Start(restartPort, true, owner);
+                    Localization.Text("App.Title")))
+                    controller.Start(restartPort, true);
             }
             else
             {
                 string detail = outcome.RollbackAttempted
                     ? Localization.Format("Update.RollbackFailed", outcome.Error, outcome.RollbackError)
                     : outcome.Error;
-                MessageBox.Show(owner, Localization.Format("Update.Failed", detail), Localization.Text("App.Title"), MessageBoxButtons.OK, MessageBoxIcon.Error);
+                interaction.Show(ManagerMessageKind.Error, Localization.Format("Update.Failed", detail));
             }
             return false;
         }
@@ -337,7 +352,7 @@ namespace DeepSeekHarnessManager
                 outcome.Succeeded = true;
                 if (String.Equals(kind, "source", StringComparison.OrdinalIgnoreCase))
                 {
-                    string resolvedVersion = RuntimeResolver.ResolveInstalledVersion(controller.Config, controller.Plugin);
+                    string resolvedVersion = RuntimeAdapters.ResolveInstalledVersion(controller.Config, controller.Plugin);
                     outcome.FinalVersion = (resolvedVersion ?? String.Empty) + "+" + ShortSha(finalSourceSha);
                 }
                 else outcome.FinalVersion = latestVersion;

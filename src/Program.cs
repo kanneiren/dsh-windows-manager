@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Security.Principal;
 using System.Threading;
 using System.Windows.Forms;
@@ -85,6 +86,14 @@ namespace DeepSeekHarnessManager
             {
                 if (!createdNew)
                 {
+                    if (!String.Equals(action, "exit", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Dictionary<string, object> controlResponse;
+                        string controlError;
+                        if (ManagerControlClient.TryRequest(action, null, ManagerControlProtocol.GetDefaultPipeName(), out controlResponse, out controlError))
+                            return 0;
+                        FileLog.Warn("Manager control pipe unavailable, falling back to legacy event signal: " + controlError);
+                    }
                     SignalSet.Signal(prefix, action);
                     return 0;
                 }
@@ -99,7 +108,32 @@ namespace DeepSeekHarnessManager
                         ConfigurationStore store = new ConfigurationStore(catalog);
                         ManagerConfig config = store.LoadOrCreate();
                         Localization.Initialize(config.Language);
-                        using (TrayApplication application = new TrayApplication(config, catalog, store, signals, action)) Application.Run(application);
+                        bool trayEnabled = !config.TrayEnabled.HasValue || config.TrayEnabled.Value;
+                        IManagerInteraction interaction = trayEnabled
+                            ? (IManagerInteraction)new WinFormsManagerInteraction()
+                            : SilentManagerInteraction.Instance;
+                        FileLog.Info("Tray mode: " + (trayEnabled ? "enabled" : "disabled"));
+                        using (ManagerService managerService = new ManagerService(config, catalog, store, signals, interaction))
+                        {
+                            if (trayEnabled)
+                            {
+                                using (TrayFrontend frontend = new TrayFrontend(managerService, action))
+                                using (ManagerControlServer controlServer = new ManagerControlServer(managerService))
+                                {
+                                    controlServer.Start();
+                                    Application.Run(frontend);
+                                }
+                            }
+                            else
+                            {
+                                using (HeadlessFrontend frontend = new HeadlessFrontend(managerService, action))
+                                using (ManagerControlServer controlServer = new ManagerControlServer(managerService))
+                                {
+                                    controlServer.Start();
+                                    Application.Run(frontend);
+                                }
+                            }
+                        }
                         return 0;
                     }
                     catch (Exception exception)

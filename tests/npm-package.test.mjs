@@ -12,7 +12,8 @@ if (process.platform !== 'win32') {
 }
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const tarball = path.resolve(process.argv[2] || path.join(projectRoot, 'dsh-windows-manager-0.2.1.tgz'));
+const metadata = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf8'));
+const tarball = path.resolve(process.argv[2] || path.join(projectRoot, `${metadata.name}-${metadata.version}.tgz`));
 assert.ok(fs.existsSync(tarball), `npm tarball not found: ${tarball}`);
 
 const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-manager-packed-'));

@@ -63,10 +63,10 @@ namespace DeepSeekHarnessManager
             {
                 foreach (string pattern in plugin.ProcessPatterns) new Regex(pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
             }
-            if (plugin.Companion != null && plugin.Companion.Enabled)
+            if (plugin.RuntimeBridge != null && plugin.RuntimeBridge.Enabled)
             {
-                string modulePath = Path.GetFullPath(Path.Combine(plugin.DirectoryPath, plugin.Companion.Module ?? String.Empty));
-                if (!File.Exists(modulePath)) throw new FileNotFoundException("Companion module not found.", modulePath);
+                string modulePath = Path.GetFullPath(Path.Combine(plugin.DirectoryPath, plugin.RuntimeBridge.Module ?? String.Empty));
+                if (!File.Exists(modulePath)) throw new FileNotFoundException("Runtime Bridge module not found.", modulePath);
             }
         }
 
@@ -141,6 +141,8 @@ namespace DeepSeekHarnessManager
             instance.PluginId = plugin.Id;
             instance.Profile = "web";
             instance.Runtime = "auto";
+            instance.RuntimeType = InstanceModel.RuntimeTypeWindows;
+            instance.Frontend = InstanceModel.FrontendWeb;
             instance.SourceRoot = String.Empty;
             instance.Workspace = workspace;
             instance.DshHome = String.Empty;
@@ -149,6 +151,9 @@ namespace DeepSeekHarnessManager
             ManagerConfig config = new ManagerConfig();
             config.SchemaVersion = 1;
             config.Language = "auto";
+            config.TrayEnabled = true;
+            config.StartWithWindows = false;
+            config.DesktopShortcut = false;
             config.DefaultInstanceId = instance.Id;
             config.Instances = new List<InstanceConfig>();
             config.Instances.Add(instance);
@@ -163,6 +168,9 @@ namespace DeepSeekHarnessManager
             if (String.IsNullOrWhiteSpace(config.Language)) config.Language = "auto";
             if (config.Language != "auto" && config.Language != "zh-CN" && config.Language != "en-US")
                 throw new InvalidDataException("Unsupported language: " + config.Language);
+            if (!config.TrayEnabled.HasValue) config.TrayEnabled = true;
+            if (!config.StartWithWindows.HasValue) config.StartWithWindows = false;
+            if (!config.DesktopShortcut.HasValue) config.DesktopShortcut = false;
             if (config.Instances == null || config.Instances.Count == 0) throw new InvalidDataException("At least one instance is required.");
             HashSet<string> ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             HashSet<int> preferredPorts = new HashSet<int>();
@@ -176,6 +184,14 @@ namespace DeepSeekHarnessManager
                 if (String.IsNullOrWhiteSpace(instance.Runtime)) instance.Runtime = "auto";
                 bool runtimeExists = instance.Runtime.Equals("auto", StringComparison.OrdinalIgnoreCase) || plugin.Runtimes.Any(delegate(RuntimeDefinition item) { return item.Id.Equals(instance.Runtime, StringComparison.OrdinalIgnoreCase); });
                 if (!runtimeExists) throw new InvalidDataException("Unknown runtime " + instance.Runtime + " for " + instance.Id);
+                if (String.IsNullOrWhiteSpace(instance.RuntimeType)) instance.RuntimeType = InstanceModel.RuntimeTypeWindows;
+                instance.RuntimeType = instance.RuntimeType.ToLowerInvariant();
+                if (instance.RuntimeType != InstanceModel.RuntimeTypeWindows && instance.RuntimeType != InstanceModel.RuntimeTypeWsl)
+                    throw new InvalidDataException("Unsupported runtime type " + instance.RuntimeType + " for " + instance.Id);
+                if (String.IsNullOrWhiteSpace(instance.Frontend)) instance.Frontend = InstanceModel.FrontendWeb;
+                instance.Frontend = instance.Frontend.ToLowerInvariant();
+                if (instance.Frontend != InstanceModel.FrontendWeb && instance.Frontend != InstanceModel.FrontendOhDsh && instance.Frontend != InstanceModel.FrontendCustom)
+                    throw new InvalidDataException("Unsupported frontend " + instance.Frontend + " for " + instance.Id);
                 if (instance.PreferredPort == 0) instance.PreferredPort = plugin.DefaultPort;
                 if (instance.PreferredPort < 1 || instance.PreferredPort > 65535) throw new InvalidDataException("Invalid port for " + instance.Id);
                 if (!preferredPorts.Add(instance.PreferredPort)) throw new InvalidDataException("Multiple instances cannot use preferred port " + instance.PreferredPort + ".");

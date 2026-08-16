@@ -13,7 +13,9 @@
       "Workspace": "%USERPROFILE%\\Projects",
       "DshHome": "",
       "PreferredPort": 3080,
-      "PinnedVersion": "0.1.0-rc.6"
+      "PinnedVersion": "0.1.0-rc.6",
+      "RuntimeType": "windows",
+      "Frontend": "web"
     },
     {
       "Id": "source-dev",
@@ -25,7 +27,12 @@
       "Workspace": "C:\\dev\\deepseek-harness",
       "DshHome": "%LOCALAPPDATA%\\DeepSeekHarnessManager\\homes\\source-dev",
       "PreferredPort": 3081,
-      "PinnedVersion": "0.1.0-rc.6"
+      "PinnedVersion": "0.1.0-rc.6",
+      "RuntimeType": "windows",
+      "Frontend": "web"
     }
-  ]
+  ],
+  "TrayEnabled": true,
+  "StartWithWindows": false,
+  "DesktopShortcut": true
 }

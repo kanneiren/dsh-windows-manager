@@ -14,7 +14,10 @@ namespace DeepSeekHarnessManager
             get
             {
                 if (!String.IsNullOrEmpty(appDirectoryOverride)) return appDirectoryOverride;
-                return Path.GetDirectoryName(System.Windows.Forms.Application.ExecutablePath);
+                string location = null;
+                try { location = System.Reflection.Assembly.GetExecutingAssembly().Location; } catch { }
+                if (!String.IsNullOrWhiteSpace(location)) return Path.GetDirectoryName(location);
+                return AppDomain.CurrentDomain.BaseDirectory;
             }
         }
 

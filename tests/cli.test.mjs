@@ -22,7 +22,8 @@ const environment = {
   ...process.env,
   DSH_MANAGER_INSTALL_ROOT: installRoot,
   DSH_MANAGER_DATA_ROOT: dataRoot,
-  DSH_MANAGER_SHORTCUT_PATH: shortcutPath
+  DSH_MANAGER_SHORTCUT_PATH: shortcutPath,
+  DSH_MANAGER_NO_REGISTRY: '1'
 };
 
 function run(args) {
@@ -72,6 +73,33 @@ try {
   assert.equal(status.installed, true);
   assert.equal(status.managerRunning, false);
   assert.equal(status.instances.length, 1);
+  assert.equal(status.trayEnabled, true);
+  assert.equal(status.instances[0].runtimeType, 'windows');
+  assert.equal(status.instances[0].frontend, 'web');
+
+  result = run(['diagnostics', '--json']);
+  assert.equal(result.status, 0, result.stderr);
+  const diagnostics = JSON.parse(result.stdout);
+  assert.equal(diagnostics.installed, true);
+  assert.equal(diagnostics.managerRunning, false);
+  assert.equal(diagnostics.trayEnabled, true);
+  assert.ok(diagnostics.managerLog);
+  assert.ok(diagnostics.dshLogDirectory);
+
+  result = run(['configure', '--runtime', 'windows', '--frontend', 'web', '--tray', 'false', '--shortcut', 'false', '--autostart', 'false']);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const configured = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  assert.equal(configured.TrayEnabled, false);
+  assert.equal(configured.StartWithWindows, false);
+  assert.equal(configured.DesktopShortcut, false);
+  assert.equal(configured.Instances[0].RuntimeType, 'windows');
+  assert.equal(configured.Instances[0].Frontend, 'web');
+
+  result = run(['configure', '--runtime', 'wsl']);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(JSON.parse(fs.readFileSync(configPath, 'utf8')).Instances[0].RuntimeType, 'wsl');
+  result = run(['configure', '--runtime', 'windows']);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
 
   result = run(['uninstall', '--no-shortcut']);
   assert.equal(result.status, 0, result.stderr);

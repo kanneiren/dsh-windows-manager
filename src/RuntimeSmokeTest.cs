@@ -21,24 +21,25 @@ namespace DeepSeekHarnessManager
             string outputLog = Path.Combine(AppPaths.LogDirectory, instance.Id + ".out.log");
             string errorLog = Path.Combine(AppPaths.LogDirectory, instance.Id + ".err.log");
             string runtimeDirectory = Path.Combine(AppPaths.RuntimeDirectory, instance.Id);
-            CompanionLaunch bridge = null;
-            ManagedProcess managed = null;
+            RuntimeBridgeLaunch bridge = null;
+            IRuntimeProcess managed = null;
+            IRuntimeAdapter adapter = RuntimeAdapters.Get(instance);
             PortInspection lastInspection = null;
             try
             {
-                bridge = CompanionPatch.Create(instance, plugin);
-                RuntimeResolution runtime = RuntimeResolver.Resolve(instance, plugin, port, bridge == null ? String.Empty : bridge.PatchPath);
+                bridge = RuntimeBridgePatch.Create(instance, plugin);
+                RuntimeResolution runtime = adapter.Resolve(instance, plugin, port, bridge == null ? String.Empty : bridge.PatchPath);
                 if (!String.IsNullOrWhiteSpace(expectedVersion) && SemanticVersion.Compare(runtime.Version, expectedVersion) != 0)
                     return Failure("Resolved version " + runtime.Version + " does not match expected version " + expectedVersion + ".");
 
-                managed = CommandRunner.StartService(runtime, outputLog, errorLog);
+                managed = adapter.Start(runtime, outputLog, errorLog);
                 InstanceController inspector = new InstanceController(instance, plugin, store);
                 DateTime deadline = DateTime.UtcNow.AddSeconds(90);
                 while (DateTime.UtcNow < deadline)
                 {
                     lastInspection = inspector.InspectPort(port);
                     if (lastInspection.Kind == InstanceStateKind.Running) break;
-                    if (managed.RootProcess.HasExited)
+                    if (managed.HasExited)
                         return Failure("DSH exited before becoming ready. " + ReadTail(errorLog));
                     Thread.Sleep(500);
                 }
@@ -66,7 +67,7 @@ namespace DeepSeekHarnessManager
             }
             finally
             {
-                Cleanup(lastInspection, managed, port);
+                Cleanup(lastInspection, managed, adapter, port);
                 try { if (Directory.Exists(runtimeDirectory)) Directory.Delete(runtimeDirectory, true); } catch { }
                 try { if (Directory.Exists(instance.DshHome)) Directory.Delete(instance.DshHome, true); } catch { }
             }
@@ -81,6 +82,8 @@ namespace DeepSeekHarnessManager
                 PluginId = source.PluginId,
                 Profile = source.Profile,
                 Runtime = source.Runtime,
+                RuntimeType = source.RuntimeType,
+                Frontend = source.Frontend,
                 SourceRoot = source.SourceRoot,
                 Workspace = source.Workspace,
                 DshHome = source.DshHome,
@@ -114,7 +117,7 @@ namespace DeepSeekHarnessManager
             catch { return String.Empty; }
         }
 
-        private static void Cleanup(PortInspection inspection, ManagedProcess managed, int port)
+        private static void Cleanup(PortInspection inspection, IRuntimeProcess managed, IRuntimeAdapter adapter, int port)
         {
             try
             {
@@ -131,8 +134,8 @@ namespace DeepSeekHarnessManager
             catch { }
             if (managed != null)
             {
-                try { CommandRunner.KillProcessTree(managed.RootProcess); } catch { }
-                try { managed.RootProcess.Dispose(); } catch { }
+                try { if (!managed.HasExited) adapter.Kill(managed); } catch { }
+                try { managed.Dispose(); } catch { }
             }
         }
     }

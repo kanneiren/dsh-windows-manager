@@ -8,27 +8,27 @@ using System.Threading.Tasks;
 
 namespace DeepSeekHarnessManager
 {
-    public sealed class CompanionLaunch
+    public sealed class RuntimeBridgeLaunch
     {
         public string PipeName { get; set; }
         public string Token { get; set; }
         public string PatchPath { get; set; }
     }
 
-    public static class CompanionPatch
+    public static class RuntimeBridgePatch
     {
-        public static CompanionLaunch Create(InstanceConfig instance, PluginDefinition plugin)
+        public static RuntimeBridgeLaunch Create(InstanceConfig instance, PluginDefinition plugin)
         {
-            if (plugin.Companion == null || !plugin.Companion.Enabled) return null;
-            string modulePath = Path.GetFullPath(Path.Combine(plugin.DirectoryPath, plugin.Companion.Module));
-            if (!File.Exists(modulePath)) throw new FileNotFoundException("Companion module not found.", modulePath);
+            if (plugin.RuntimeBridge == null || !plugin.RuntimeBridge.Enabled) return null;
+            string modulePath = Path.GetFullPath(Path.Combine(plugin.DirectoryPath, plugin.RuntimeBridge.Module));
+            if (!File.Exists(modulePath)) throw new FileNotFoundException("Runtime Bridge module not found.", modulePath);
             byte[] tokenBytes = new byte[32];
             using (RandomNumberGenerator random = RandomNumberGenerator.Create()) random.GetBytes(tokenBytes);
             string token = BitConverter.ToString(tokenBytes).Replace("-", String.Empty).ToLowerInvariant();
             string pipeName = "DeepSeekHarnessManager-" + AppPaths.SafeFileName(instance.Id) + "-" + token.Substring(0, 12);
             string directory = AppPaths.InstanceRuntimeDirectory(instance.Id);
             string patchPath = Path.Combine(directory, "windows-lifecycle.patch.yml");
-            string entryId = String.IsNullOrWhiteSpace(plugin.Companion.EntryId) ? "windows-lifecycle" : plugin.Companion.EntryId;
+            string entryId = String.IsNullOrWhiteSpace(plugin.RuntimeBridge.EntryId) ? "windows-lifecycle" : plugin.RuntimeBridge.EntryId;
             StringBuilder yaml = new StringBuilder();
             yaml.AppendLine("- insert:");
             yaml.AppendLine("    - id: " + YamlSingle(entryId));
@@ -39,7 +39,7 @@ namespace DeepSeekHarnessManager
             if (!String.IsNullOrWhiteSpace(instance.Profile))
                 yaml.AppendLine("        profile: " + YamlSingle(instance.Profile));
             File.WriteAllText(patchPath, yaml.ToString(), new UTF8Encoding(false));
-            CompanionLaunch launch = new CompanionLaunch();
+            RuntimeBridgeLaunch launch = new RuntimeBridgeLaunch();
             launch.PipeName = pipeName;
             launch.Token = token;
             launch.PatchPath = patchPath;

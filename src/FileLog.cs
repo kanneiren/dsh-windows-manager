@@ -55,7 +55,14 @@ namespace DeepSeekHarnessManager
         private static void CleanInstanceLogs()
         {
             string[] files;
-            try { files = Directory.GetFiles(AppPaths.LogDirectory, "web-*.log"); }
+            try
+            {
+                HashSet<string> collected = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (string match in Directory.GetFiles(AppPaths.LogDirectory, "*.out.log")) collected.Add(match);
+                foreach (string match in Directory.GetFiles(AppPaths.LogDirectory, "*.err.log")) collected.Add(match);
+                files = new string[collected.Count];
+                collected.CopyTo(files);
+            }
             catch { return; }
             DateTime cutoffUtc = DateTime.UtcNow.AddDays(-InstanceLogRetentionDays);
             Dictionary<string, List<string>> groups = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);

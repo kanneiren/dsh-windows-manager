@@ -226,7 +226,7 @@ namespace DeepSeekHarnessManager
 
     public static class SafeTermination
     {
-        public static bool TryCloseThenKill(ProcessIdentity captured, int port, System.Windows.Forms.IWin32Window owner, out string error)
+        public static bool TryCloseThenKill(ProcessIdentity captured, int port, IManagerInteraction interaction, out string error)
         {
             error = String.Empty;
             if (captured == null)
@@ -260,13 +260,7 @@ namespace DeepSeekHarnessManager
                     bool closeRequested = false;
                     try { closeRequested = process.CloseMainWindow(); } catch { }
                     if (closeRequested && process.WaitForExit(3000)) return true;
-                    System.Windows.Forms.DialogResult result = System.Windows.Forms.MessageBox.Show(
-                        owner,
-                        Localization.Format("Dialog.ForceEnd", current.ProcessId, current.Name, current.ImagePath),
-                        Localization.Text("Dialog.ForceEndTitle"),
-                        System.Windows.Forms.MessageBoxButtons.YesNo,
-                        System.Windows.Forms.MessageBoxIcon.Warning);
-                    if (result != System.Windows.Forms.DialogResult.Yes)
+                    if (!interaction.ConfirmForceEnd(current))
                     {
                         error = Localization.Text("Safety.Cancelled");
                         return false;

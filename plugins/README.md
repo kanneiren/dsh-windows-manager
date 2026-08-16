@@ -9,11 +9,11 @@ Schema version 1 fields:
 - `ProcessPatterns` used for identification and safe-stop eligibility.
 - `Runtimes` containing command candidates, requirements, arguments, working directory and version file.
 - `Update` containing npm and Git sources.
-- `Companion` containing the Cordis bridge module, entry id, and `BridgeProtocolVersion`.
+- `RuntimeBridge` containing the Cordis bridge module, entry id, and `BridgeProtocolVersion`. The legacy `Companion` key is still accepted for installed-layout compatibility.
 
 ## Runtime Bridge Protocol
 
-The Companion module in `cordis/windows-lifecycle.mjs` is a Cordis function plugin. Manager launches load it through a generated per-launch `--patch`; the same module can also be installed as a DSH bundle because `package.json` declares `dsh.bundle.patch`. Without a configured `pipeName` and `token`, the bundle entry stays inert.
+The Runtime Bridge module in `cordis/windows-lifecycle.mjs` is a Cordis function plugin. Manager launches load it through a generated per-launch `--patch`; the same module can also be installed as a DSH bundle because `package.json` declares `dsh.bundle.patch`. Without a configured `pipeName` and `token`, the bundle entry stays inert.
 
 New messages are newline-delimited JSON:
 
@@ -41,4 +41,4 @@ Supported tokens:
 
 `{commandDir}` is the directory containing the resolved runtime command. It is available after `CommandCandidates` resolution for requirements, arguments, the working directory, and `VersionFile`, but not inside `CommandCandidates`. The global runtime uses it so custom npm prefixes resolve the correct package version.
 
-Plugin manifests and Cordis companions are trusted executable configuration loaded with the same authority as other Harness plugins. Install adapters and DSH bundles only from trusted sources.
+Plugin manifests and Runtime Bridge modules are trusted executable configuration loaded with the same authority as other Harness plugins. Install adapters and DSH bundles only from trusted sources.

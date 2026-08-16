@@ -32,6 +32,10 @@ Do not describe the manager package as the DSH runtime. They are separate packag
 - Keep post-update compatibility smoke testing and verified rollback intact for global npm, npx, and source runtimes.
 - Preserve `%LOCALAPPDATA%\DeepSeekHarnessManager\config.json` and user data during install and upgrade.
 - Treat `PreferredPort` as configuration. `3080` is only the default, and multiple instances must have unique ports.
+- Keep instance `RuntimeType` (`windows` | reserved `wsl`) and `Frontend` (`web` | reserved `oh-dsh`/`custom`) in config and snapshots; only `windows` + `web` are implemented.
+- `TrayEnabled=false` must keep one EXE and one primary process running Core + Supervisor + Runtime Bridge + Manager Control API; never spawn a separate daemon.
+- `configure` must edit `config.json` in place and preserve unknown fields; `--autostart true` is the only path that writes the per-user Run key.
+- `open()` must resolve the configured frontend through `FrontendLauncher`; reserved frontends fail explicitly and never silently fall back to Web.
 - Keep `Language = auto` as a startup-time `CurrentUICulture` check, not a continuous watcher.
 - Keep source compatible with C# 5 and .NET Framework 4.8.
 - Keep the npm CLI dependency-free unless a dependency has a concrete, reviewed benefit.
@@ -39,9 +43,16 @@ Do not describe the manager package as the DSH runtime. They are separate packag
 
 ## File Map
 
-- `src/Program.cs`: process entry point, single-instance mutex, external action signals.
-- `src/TrayApplication.cs`: tray UI, per-instance menus, marketplace link, language switching, UI notification coalescing.
+- `src/Program.cs`: process entry point, single-instance mutex, Manager Control forwarding, and legacy external action signals.
+- `src/ManagerService.cs`: `IManagerService` facade owning controllers, lifecycle orchestration, update scheduling, and frontend-open/configuration actions.
+- `src/ManagerControlProtocol.cs`: Manager Control Protocol v1 wire format, per-user pipe name, version helper, and short-lived client.
+- `src/ManagerControlServer.cs`: async local named-pipe server with current-user-only ACL; no TCP and no polling.
+- `src/Interaction.cs`: `IManagerInteraction` user-decision boundary and silent implementation; keeps core UI-free for headless/WSL use.
+- `src/Dialogs.cs`: WinForms frontend implementation of `IManagerInteraction` plus port-conflict and update-progress forms.
+- `src/TrayFrontend.cs`: tray UI only; per-instance menus, language switching, notifications, and UI marshaling through `IManagerService`.
+- `src/HeadlessFrontend.cs`: `TrayEnabled=false` single-process message loop; no tray icon, no notifications.
 - `src/InstanceController.cs`: DSH discovery, start, stop, restart, event-driven state transitions, and IPC-bridge integration.
+- `src/RuntimeAdapter.cs`: `IRuntimeAdapter` / `IRuntimeProcess` boundary and registry; only `WindowsRuntimeAdapter` is implemented.
 - `src/IpcBridge.cs`: versioned named-pipe protocol client, runtime-info parsing, and persistent event connection.
 - `src/PortProcess.cs`: port ownership, process identity, protection, and safe termination.
 - `src/GracefulShutdown.cs`: authenticated named-pipe shutdown client with legacy compatibility.
@@ -50,7 +61,7 @@ Do not describe the manager package as the DSH runtime. They are separate packag
 - `plugins/deepseek-harness-web/plugin.json`: DSH launch, probe, runtime, update, and bridge declarations.
 - `plugins/deepseek-harness-web/cordis/windows-lifecycle.mjs`: DSH-side versioned runtime bridge plugin.
 - `plugins/deepseek-harness-web/package.json` + `cordis.patch.yml`: formal installable DSH bundle metadata for the same plugin.
-- `bin/dsh-windows-manager.js`: npm CLI.
+- `bin/dsh-windows-manager.js`: npm CLI including install, status, diagnostics, actions through Manager Control, and zero-config/`configure`.
 - `scripts/Build.ps1`: deterministic runtime build.
 - `scripts/Install.ps1`: per-user application installation.
 - `scripts/Test.ps1`: complete local and CI test entry point.
@@ -68,7 +79,7 @@ Validate the exact npm payload and install it from the generated tarball:
 
 ```powershell
 npm pack
-node .\tests\npm-package.test.mjs .\dsh-windows-manager-0.2.1.tgz
+node .\tests\npm-package.test.mjs .\dsh-windows-manager-0.3.0.tgz
 ```
 
 Before a version change, update both `package.json` and `src/AssemblyInfo.cs`. Keep user-visible behavior synchronized across both README files, both security policies, both contribution guides, `docs/FEATURES.md`, and `docs/ARCHITECTURE.md` as applicable.

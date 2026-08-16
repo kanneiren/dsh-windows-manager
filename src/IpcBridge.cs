@@ -32,6 +32,7 @@ namespace DeepSeekHarnessManager
         public string DshHome { get; set; }
         public string NodeVersion { get; set; }
         public string Cwd { get; set; }
+        public string RuntimeBridgeVersion { get; set; }
 
         public bool IsReady
         {
@@ -176,6 +177,7 @@ namespace DeepSeekHarnessManager
             info.DshHome = GetString(message.Payload, "dshHome");
             info.NodeVersion = GetString(message.Payload, "nodeVersion");
             info.Cwd = GetString(message.Payload, "cwd");
+            info.RuntimeBridgeVersion = GetString(message.Payload, "runtimeBridgeVersion");
             return info;
         }
 

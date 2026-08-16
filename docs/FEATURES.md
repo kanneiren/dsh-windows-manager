@@ -13,13 +13,18 @@
 | Runtime adapters | Global npm, fixed-version npx, and Git source checkout |
 | Discovery | Authoritative DSH IPC status/events when the bridge is connected; combined HTTP content and process-command fingerprints remain as fallback |
 | Ports | Configurable preferred port, bounded fallback selection, conflict details |
+| Frontends | `web` opens the local Web UI; `oh-dsh` and `custom` are reserved and fail explicitly instead of falling back to web |
+| Runtime adapter | `IRuntimeAdapter` boundary with a Windows implementation; `wsl` is reserved and reports that its adapter is not implemented yet |
 | Multi-instance | Independent menu, status, port, workspace, runtime, and optional DSH home |
 | Configuration | Separate menu actions for manager `config.json` and each instance's DSH settings directory |
-| Shutdown | Authenticated versioned DSH IPC bridge (`ping`/`getStatus`/`getRuntimeInfo`/`shutdown`) with legacy Companion fallback and guarded manual termination |
+| Shutdown | Authenticated versioned DSH IPC bridge (`ping`/`getStatus`/`getRuntimeInfo`/`shutdown`) with legacy single-purpose shutdown fallback and guarded manual termination |
 | Updates | 24-hour checks, confirmed installation, isolated compatibility smoke test, and verified rollback |
 | Performance | Event-driven process and IPC monitoring for Manager-owned DSH; fallback WMI/HTTP probes only when the bridge is unavailable |
 | Languages | English, Simplified Chinese, and startup-time Windows language selection |
+| Tray optional | `TrayEnabled=false` keeps the same EXE running Core + Supervisor + Runtime Bridge + Manager Control API without a tray icon |
 | Status | Tray state, details dialog with IPC state/version/home, logs, and npm CLI JSON or text output |
+| Diagnostics | Copy diagnostics, separate Manager/DSH log actions, and `dsh-windows-manager diagnostics [--json]` |
+| Manager API | Local named-pipe Manager Control Protocol v1 (`getVersion`/`getStatus`/`listInstances`/`start`/`stop`/`restart`/`open`) for CLI and future frontends |
 | Plugin discovery | Opens the GitHub `dsh-plugin` topic |
 | Troubleshooting | URL, dual fingerprints, process identity, output/error logs, and a documented decision tree |
 | Upgrade | Replaces runtime files while preserving configuration and mutable data |
@@ -37,11 +42,11 @@ The npm CLI supports:
 install, uninstall, open, start, stop, restart, exit, status
 ```
 
-`open`, `start`, `stop`, and `restart` target the configured `DefaultInstanceId`. Other instances are controlled through their tray submenu. `status` lists every configured instance.
+`open`, `start`, `stop`, and `restart` target the configured `DefaultInstanceId`. When the Manager is running, the CLI forwards these actions through the local Manager Control pipe; otherwise it starts the Manager. `exit` retains the legacy event activation path. `status` lists every configured instance and merges authoritative Manager state when the control pipe is available.
 
 ## Configuration Boundaries
 
-The first install creates one Web instance. Initial runtime, workspace, source root, and preferred port can be selected from the installer or npm CLI. Existing configuration is never replaced by a later install.
+The first install creates one Windows Web instance with `TrayEnabled=true`. Initial runtime, workspace, source root, and preferred port can be selected from the installer or npm CLI. `RuntimeType` (`windows` | reserved `wsl`) and `Frontend` (`web` | reserved `oh-dsh`/`custom`) are stored per instance; only `windows` + `web` are implemented. Setting `TrayEnabled=false` runs the same EXE headless. Existing configuration is never replaced by a later install.
 
 Adding, removing, or changing instances currently requires editing `config.json` and restarting the manager. There is no graphical instance editor yet.
 
@@ -49,7 +54,7 @@ Adding, removing, or changing instances currently requires editing `config.json`
 
 - No MSI, NSIS, or separate Setup executable; installation stays scriptable through npm, an agent, or `Install.cmd`.
 - No Windows service or administrator-mode installation.
-- No automatic startup registration.
+- No automatic startup registration; optional explicit `configure --autostart true` only.
 - No silent update installation.
 - No automatic termination of unknown port owners.
 - No unrestricted network binding.

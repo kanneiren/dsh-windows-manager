@@ -100,6 +100,9 @@ if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
     $config = [ordered]@{
         SchemaVersion = 1
         Language = 'auto'
+        TrayEnabled = $true
+        StartWithWindows = $false
+        DesktopShortcut = $(-not $NoShortcut)
         DefaultInstanceId = 'web'
         Instances = @(
             [ordered]@{
@@ -108,6 +111,8 @@ if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
                 PluginId = 'deepseek-harness-web'
                 Profile = 'web'
                 Runtime = $Runtime
+                RuntimeType = 'windows'
+                Frontend = 'web'
                 SourceRoot = $SourceRoot
                 Workspace = $Workspace
                 DshHome = ''
