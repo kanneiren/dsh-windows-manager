@@ -34,3 +34,6 @@ npm-debug.log*
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Release archives
+*.zip
