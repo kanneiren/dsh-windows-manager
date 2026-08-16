@@ -139,7 +139,7 @@ Manager 运行期间，CLI 的 `status` / `open` / `start` / `stop` / `restart` 
 
 把 `config.json` 中的 `TrayEnabled` 设为 `false` 后，同一个 `DeepSeekHarnessManager.exe` 会以无托盘模式运行：Manager Core、Supervisor、Runtime Bridge 和 Manager Control API 继续工作，通过 CLI 控制。
 
-`RuntimeType` 已预留给 WSL 支持。规划中的 `WslRuntimeAdapter` 将以 WSL2 为目标：Manager 只运行在 Windows，不在 WSL 内安装任何 Manager/daemon；WSL 内只有 DSH 进程和按启动注入的 Runtime Bridge `--patch`。用 `wsl.exe` 管理进程句柄，用 WSL 内 Runtime Bridge 提供权威 PID/状态，transport 使用带 256 位 token 的 loopback TCP，不使用 WMI 猜测 Linux PID。当前只有 `WindowsRuntimeAdapter`；选择 `wsl` 会得到明确的 “adapter not implemented” 错误，而不会退回 Windows 启动路径。
+`RuntimeType` 已支持 WSL2 基本路径。Manager 只运行在 Windows，不在 WSL 内安装任何 Manager/daemon；WSL 内只有 DSH 进程和按启动注入的 Runtime Bridge `--patch`。`WslRuntimeAdapter` 通过 `wsl.exe` 管理进程句柄，用 WSL 内 Runtime Bridge 提供权威 PID/状态，transport 使用带 256 位 token 的 loopback TCP，不使用 WMI 猜测 Linux PID。需要 Windows 与 WSL2 之间启用 localhost/loopback 转发。
 
 
 

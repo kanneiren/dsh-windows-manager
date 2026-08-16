@@ -28,8 +28,14 @@ namespace DeepSeekHarnessManager
             }
             else if (kind == "npx")
             {
-                launchCommand = "npx --yes @deepseek-ai/dsh@" + (instance.PinnedVersion ?? String.Empty);
-                version = instance.PinnedVersion ?? String.Empty;
+                if (String.IsNullOrWhiteSpace(instance.PinnedVersion))
+                    throw new InvalidOperationException("WSL npx runtime requires PinnedVersion.");
+                launchCommand = "npx --yes @deepseek-ai/dsh@" + instance.PinnedVersion;
+                version = instance.PinnedVersion;
+            }
+            else if (kind != "global")
+            {
+                throw new InvalidOperationException("Unsupported WSL runtime kind: " + kind);
             }
 
             string wslWorkingDirectory = ConvertToWslPath(distro, workingDirectory);
