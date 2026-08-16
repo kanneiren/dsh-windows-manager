@@ -385,6 +385,9 @@ namespace DeepSeekHarnessManager
             {
                 if (String.Equals(existing.Id, instanceId, StringComparison.OrdinalIgnoreCase)) return;
             }
+            config.WslEnabled = true;
+            if (String.IsNullOrWhiteSpace(config.WslDefaultDistro))
+                config.WslDefaultDistro = controller.Config.WslDistro ?? String.Empty;
             config.Instances.Add(controller.Config);
             configurationStore.Save(config);
             detectedInstanceIds.Remove(instanceId);

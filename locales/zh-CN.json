@@ -148,5 +148,11 @@
   "Diagnostics.LastExitReason": "最近退出原因",
   "Diagnostics.None": "无",
   "Diagnostics.Copied": "诊断信息已复制到剪贴板。",
-  "Diagnostics.CopyFailed": "无法将诊断信息复制到剪贴板。\r\n\r\n{0}"
+  "Diagnostics.CopyFailed": "无法将诊断信息复制到剪贴板。\r\n\r\n{0}",
+  "Menu.DetectWslDsh": "检测 WSL 中的 DSH",
+  "Menu.DetectingWsl": "正在检测 WSL 中的 DSH...",
+  "Menu.CurrentInstance": "当前实例",
+  "Menu.SaveDetectedInstance": "保存检测到的 WSL 实例",
+  "Menu.RemoveDetectedInstance": "移除检测到的实例",
+  "Diagnostics.DetectedWsl": "检测到 {0} 个 WSL DSH 实例。"
 }

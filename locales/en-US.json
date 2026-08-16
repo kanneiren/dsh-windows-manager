@@ -148,5 +148,11 @@
   "Diagnostics.LastExitReason": "Last exit reason",
   "Diagnostics.None": "none",
   "Diagnostics.Copied": "Diagnostics copied to the clipboard.",
-  "Diagnostics.CopyFailed": "Could not copy diagnostics to the clipboard.\r\n\r\n{0}"
+  "Diagnostics.CopyFailed": "Could not copy diagnostics to the clipboard.\r\n\r\n{0}",
+  "Menu.DetectWslDsh": "Detect WSL DSH",
+  "Menu.DetectingWsl": "Detecting WSL DSH...",
+  "Menu.CurrentInstance": "Current instance",
+  "Menu.SaveDetectedInstance": "Save detected WSL instance",
+  "Menu.RemoveDetectedInstance": "Remove detected instance",
+  "Diagnostics.DetectedWsl": "Detected {0} WSL DSH instance(s)."
 }

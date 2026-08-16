@@ -19,7 +19,11 @@ namespace DeepSeekHarnessManager
         private readonly Control uiSink;
         private bool initialActionHandled;
         private bool exitRequested;
+        private string selectedInstanceId;
         private string lastUiSignature;
+        private string lastMenuSignature;
+        private ToolStripMenuItem instanceSelector;
+        private ToolStripMenuItem detectWslItem;
 
         public TrayFrontend(IManagerService managerService, string action)
         {
@@ -35,13 +39,16 @@ namespace DeepSeekHarnessManager
             manager.ExitRequested += ManagerExitRequested;
 
             LoadIcons();
+            ManagerSnapshot initialSnapshot = manager.GetSnapshot();
+            selectedInstanceId = initialSnapshot.DefaultInstanceId;
             menu = new ContextMenuStrip();
             BuildMenu();
+            lastMenuSignature = BuildMenuSignature(manager.GetSnapshot());
             notifyIcon = new NotifyIcon();
             notifyIcon.ContextMenuStrip = menu;
             notifyIcon.Icon = GetIcon(InstanceStateKind.Stopped);
             notifyIcon.Text = Localization.Text("App.Title");
-            notifyIcon.DoubleClick += delegate { manager.Open(null); };
+            notifyIcon.DoubleClick += delegate { manager.Open(selectedInstanceId); };
             notifyIcon.Visible = true;
 
             manager.TickInstances();
@@ -70,19 +77,31 @@ namespace DeepSeekHarnessManager
         private void BuildMenu()
         {
             ManagerSnapshot snapshot = manager.GetSnapshot();
-            if (snapshot.Instances.Count == 1)
+            EnsureSelectedInstance(snapshot);
+
+            instanceSelector = new ToolStripMenuItem(Localization.Text("Menu.CurrentInstance") + ": " + SelectedInstanceTitle(snapshot));
+            foreach (InstanceSnapshot instance in snapshot.Instances)
             {
-                BuildInstanceMenu(menu.Items, snapshot.Instances[0]);
-            }
-            else
-            {
-                foreach (InstanceSnapshot instance in snapshot.Instances)
+                string instanceId = instance.Id;
+                ToolStripMenuItem item = new ToolStripMenuItem(InstanceTitle(instance));
+                item.Checked = String.Equals(instanceId, selectedInstanceId, StringComparison.OrdinalIgnoreCase);
+                item.Click += delegate
                 {
-                    ToolStripMenuItem instanceRoot = new ToolStripMenuItem(instance.Name);
-                    menu.Items.Add(instanceRoot);
-                    BuildInstanceMenu(instanceRoot.DropDownItems, instance);
-                }
+                    selectedInstanceId = instanceId;
+                    RebuildMenu();
+                };
+                instanceSelector.DropDownItems.Add(item);
             }
+            menu.Items.Add(instanceSelector);
+            menu.Items.Add(new ToolStripSeparator());
+
+            detectWslItem = new ToolStripMenuItem(Localization.Text("Menu.DetectWslDsh"));
+            detectWslItem.Click += delegate { DetectWslDshAsync(); };
+            menu.Items.Add(detectWslItem);
+            menu.Items.Add(new ToolStripSeparator());
+
+            InstanceSnapshot selected = FindSelectedInstance(snapshot);
+            if (selected != null) BuildInstanceMenu(menu.Items, selected);
 
             menu.Items.Add(new ToolStripSeparator());
             string marketplaceUrl = null;
@@ -141,6 +160,52 @@ namespace DeepSeekHarnessManager
             menu.Items.Add(exit);
         }
 
+        private void EnsureSelectedInstance(ManagerSnapshot snapshot)
+        {
+            if (snapshot == null || snapshot.Instances == null || snapshot.Instances.Count == 0) return;
+            bool exists = false;
+            foreach (InstanceSnapshot instance in snapshot.Instances)
+            {
+                if (String.Equals(instance.Id, selectedInstanceId, StringComparison.OrdinalIgnoreCase))
+                {
+                    exists = true;
+                    break;
+                }
+            }
+            if (!exists) selectedInstanceId = snapshot.DefaultInstanceId ?? snapshot.Instances[0].Id;
+        }
+
+        private InstanceSnapshot FindSelectedInstance(ManagerSnapshot snapshot)
+        {
+            if (snapshot == null || snapshot.Instances == null) return null;
+            foreach (InstanceSnapshot instance in snapshot.Instances)
+                if (String.Equals(instance.Id, selectedInstanceId, StringComparison.OrdinalIgnoreCase)) return instance;
+            return snapshot.Instances.Count == 0 ? null : snapshot.Instances[0];
+        }
+
+        private string InstanceTitle(InstanceSnapshot instance)
+        {
+            int port = instance.ActivePort > 0 ? instance.ActivePort : instance.PreferredPort;
+            return instance.Name + " (" + instance.RuntimeType + ", " + port + ")";
+        }
+
+        private string SelectedInstanceTitle(ManagerSnapshot snapshot)
+        {
+            InstanceSnapshot selected = FindSelectedInstance(snapshot);
+            return selected == null ? Localization.Text("State.Unknown") : InstanceTitle(selected);
+        }
+
+        private void RebuildMenu()
+        {
+            menu.SuspendLayout();
+            menu.Items.Clear();
+            menuBindings.Clear();
+            BuildMenu();
+            menu.ResumeLayout();
+            lastUiSignature = null;
+            RefreshUi();
+        }
+
         private void BuildInstanceMenu(ToolStripItemCollection items, InstanceSnapshot instance)
         {
             string instanceId = instance.Id;
@@ -183,7 +248,57 @@ namespace DeepSeekHarnessManager
             items.Add(binding.Details);
             items.Add(binding.Workspace);
             items.Add(dshSettings);
+            if (instance.IsDetected)
+            {
+                ToolStripMenuItem saveDetected = new ToolStripMenuItem(Localization.Text("Menu.SaveDetectedInstance"));
+                saveDetected.Click += delegate { manager.SaveDetectedInstance(instanceId); };
+                items.Add(saveDetected);
+                ToolStripMenuItem removeDetected = new ToolStripMenuItem(Localization.Text("Menu.RemoveDetectedInstance"));
+                removeDetected.Click += delegate { manager.RemoveDetectedInstance(instanceId); };
+                items.Add(removeDetected);
+            }
             menuBindings.Add(instanceId, binding);
+        }
+
+        private async void DetectWslDshAsync()
+        {
+            if (detectWslItem == null) return;
+            detectWslItem.Enabled = false;
+            detectWslItem.Text = Localization.Text("Menu.DetectingWsl");
+            try
+            {
+                System.Collections.Generic.List<WslRunningInstance> detected = await Task.Run(delegate { return manager.DetectWslDsh(); });
+                int registered = 0;
+                if (detected != null)
+                {
+                    foreach (WslRunningInstance item in detected)
+                    {
+                        manager.RegisterDetectedWslInstance(item);
+                        registered++;
+                    }
+                }
+                notifyIcon.BalloonTipTitle = Localization.Text("App.Title");
+                notifyIcon.BalloonTipText = registered == 0
+                    ? Localization.Text("Diagnostics.None")
+                    : Localization.Format("Diagnostics.DetectedWsl", registered);
+                notifyIcon.BalloonTipIcon = registered == 0 ? ToolTipIcon.Warning : ToolTipIcon.Info;
+                notifyIcon.ShowBalloonTip(4000);
+            }
+            catch (Exception exception)
+            {
+                FileLog.Error(exception);
+                MessageBox.Show(Localization.Format("Update.CheckFailed", exception.Message),
+                    Localization.Text("App.Title"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            finally
+            {
+                if (detectWslItem != null)
+                {
+                    detectWslItem.Enabled = true;
+                    detectWslItem.Text = Localization.Text("Menu.DetectWslDsh");
+                }
+                RebuildMenu();
+            }
         }
 
         private async void CheckUpdateAsync(string instanceId, bool force, bool reportCurrent)
@@ -268,6 +383,14 @@ namespace DeepSeekHarnessManager
                     try
                     {
                         manager.DrainNotifications();
+                        ManagerSnapshot snapshot = manager.GetSnapshot();
+                        string menuSignature = BuildMenuSignature(snapshot);
+                        if (!String.Equals(menuSignature, lastMenuSignature, StringComparison.Ordinal))
+                        {
+                            lastMenuSignature = menuSignature;
+                            RebuildMenu();
+                            return;
+                        }
                         RefreshUi();
                     }
                     catch (Exception exception)
@@ -294,23 +417,26 @@ namespace DeepSeekHarnessManager
             string signature = BuildUiSignature(snapshot);
             if (String.Equals(signature, lastUiSignature, StringComparison.Ordinal)) return;
             lastUiSignature = signature;
-            foreach (InstanceSnapshot instance in snapshot.Instances)
+            InstanceSnapshot selected = FindSelectedInstance(snapshot);
+            if (selected != null && menuBindings.ContainsKey(selected.Id))
             {
-                InstanceMenuBinding binding = menuBindings[instance.Id];
-                binding.Status.Text = Localization.Text("Menu.Status") + ": " + LocalizedState(instance);
-                string installed = String.IsNullOrWhiteSpace(instance.InstalledVersion) ? Localization.Text("Version.Unknown") : instance.InstalledVersion;
-                if (instance.UpdateAvailable)
-                    binding.Version.Text = Localization.Text("Menu.Version") + ": " + installed + " (" + Localization.Format("Version.Update", instance.LatestVersion) + ")";
+                InstanceMenuBinding binding = menuBindings[selected.Id];
+                binding.Status.Text = Localization.Text("Menu.Status") + ": " + LocalizedState(selected);
+                string installed = String.IsNullOrWhiteSpace(selected.InstalledVersion) ? Localization.Text("Version.Unknown") : selected.InstalledVersion;
+                if (selected.UpdateAvailable)
+                    binding.Version.Text = Localization.Text("Menu.Version") + ": " + installed + " (" + Localization.Format("Version.Update", selected.LatestVersion) + ")";
                 else binding.Version.Text = Localization.Text("Menu.Version") + ": " + installed;
-                binding.Open.Enabled = instance.State != InstanceStateKind.Updating && instance.State != InstanceStateKind.Stopping;
-                binding.Start.Enabled = instance.State == InstanceStateKind.Stopped || instance.State == InstanceStateKind.Conflict || instance.State == InstanceStateKind.Error;
-                binding.Stop.Enabled = instance.State == InstanceStateKind.Running || instance.State == InstanceStateKind.Starting;
-                binding.Restart.Enabled = instance.State == InstanceStateKind.Running;
-                binding.UpdateNow.Visible = instance.UpdateAvailable;
-                binding.UpdateNow.Enabled = instance.State != InstanceStateKind.Starting && instance.State != InstanceStateKind.Stopping && instance.State != InstanceStateKind.Updating;
-                binding.CheckUpdate.Enabled = !instance.UpdateCheckInProgress;
-                binding.CheckUpdate.Text = instance.UpdateCheckInProgress ? Localization.Text("Menu.CheckingUpdate") : Localization.Text("Menu.CheckUpdate");
+                binding.Open.Enabled = selected.State != InstanceStateKind.Updating && selected.State != InstanceStateKind.Stopping;
+                binding.Start.Enabled = selected.State == InstanceStateKind.Stopped || selected.State == InstanceStateKind.Conflict || selected.State == InstanceStateKind.Error;
+                binding.Stop.Enabled = selected.State == InstanceStateKind.Running || selected.State == InstanceStateKind.Starting;
+                binding.Restart.Enabled = selected.State == InstanceStateKind.Running;
+                binding.UpdateNow.Visible = selected.UpdateAvailable;
+                binding.UpdateNow.Enabled = selected.State != InstanceStateKind.Starting && selected.State != InstanceStateKind.Stopping && selected.State != InstanceStateKind.Updating;
+                binding.CheckUpdate.Enabled = !selected.UpdateCheckInProgress;
+                binding.CheckUpdate.Text = selected.UpdateCheckInProgress ? Localization.Text("Menu.CheckingUpdate") : Localization.Text("Menu.CheckUpdate");
             }
+            if (instanceSelector != null)
+                instanceSelector.Text = Localization.Text("Menu.CurrentInstance") + ": " + SelectedInstanceTitle(snapshot);
             InstanceStateKind aggregate = AggregateState(snapshot);
             notifyIcon.Icon = GetIcon(aggregate);
             string text = Localization.Text("App.Title") + " - " + LocalizedStateName(aggregate);
@@ -321,8 +447,11 @@ namespace DeepSeekHarnessManager
         {
             List<string> values = new List<string>();
             values.Add(Localization.CurrentLanguage ?? String.Empty);
+            values.Add(selectedInstanceId ?? String.Empty);
             foreach (InstanceSnapshot instance in snapshot.Instances)
             {
+                values.Add(instance.IsDetected ? "1" : "0");
+
                 values.Add(instance.Id);
                 values.Add(instance.State.ToString());
                 values.Add(instance.ActivePort.ToString());
@@ -332,6 +461,19 @@ namespace DeepSeekHarnessManager
                 values.Add(instance.LatestVersion ?? String.Empty);
                 values.Add(instance.UpdateAvailable ? "1" : "0");
                 values.Add(instance.UpdateCheckInProgress ? "1" : "0");
+            }
+            return String.Join("|", values.ToArray());
+        }
+
+        private string BuildMenuSignature(ManagerSnapshot snapshot)
+        {
+            List<string> values = new List<string>();
+            foreach (InstanceSnapshot instance in snapshot.Instances)
+            {
+                values.Add(instance.Id);
+                values.Add(instance.Name ?? String.Empty);
+                values.Add(instance.RuntimeType ?? String.Empty);
+                values.Add(instance.IsDetected ? "1" : "0");
             }
             return String.Join("|", values.ToArray());
         }
@@ -386,13 +528,7 @@ namespace DeepSeekHarnessManager
         private void ChangeLanguage(string language)
         {
             manager.SetLanguage(language);
-            menu.SuspendLayout();
-            menu.Items.Clear();
-            menuBindings.Clear();
-            BuildMenu();
-            menu.ResumeLayout();
-            lastUiSignature = null;
-            RefreshUi();
+            RebuildMenu();
         }
 
         private void LoadIcons()

@@ -941,6 +941,26 @@ namespace DeepSeekHarnessManager.Tests
                 foreach (WslRunningInstance item in detected)
                     if (item.Port == instance.PreferredPort) { found = true; break; }
                 Assert(found, "wsl detector should find the launched DSH port");
+
+                ManagerConfig managerConfig = new ManagerConfig();
+                managerConfig.SchemaVersion = 1;
+                managerConfig.Language = "auto";
+                managerConfig.TrayEnabled = true;
+                managerConfig.WslEnabled = true;
+                managerConfig.WslDefaultDistro = distro;
+                managerConfig.DefaultInstanceId = "web";
+                managerConfig.Instances = new List<InstanceConfig>();
+                InstanceConfig existing = CreateInstance(plugin, 3080);
+                existing.RuntimeType = InstanceModel.RuntimeTypeWindows;
+                managerConfig.Instances.Add(existing);
+                using (ManagerService service = new ManagerService(managerConfig, catalog, store, SilentManagerInteraction.Instance))
+                {
+                    List<WslRunningInstance> serviceDetected = service.DetectWslDsh();
+                    bool serviceFound = false;
+                    foreach (WslRunningInstance item in serviceDetected)
+                        if (item.Port == instance.PreferredPort) { serviceFound = true; break; }
+                    Assert(serviceFound, "manager service should detect the launched WSL DSH through its distro list");
+                }
             }
             finally
             {
