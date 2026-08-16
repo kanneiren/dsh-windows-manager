@@ -203,6 +203,7 @@ namespace DeepSeekHarnessManager
                     string effectiveDistro = String.IsNullOrWhiteSpace(instance.WslDistro) ? config.WslDefaultDistro : instance.WslDistro;
                     if (String.IsNullOrWhiteSpace(effectiveDistro))
                         throw new InvalidDataException("A WSL distro is required for instance " + instance.Id + ". Run dsh-windows-manager wsl enable --distro <name> or configure --wsl-distro <name>.");
+                    instance.WslDistro = effectiveDistro;
                 }
                 if (String.IsNullOrWhiteSpace(instance.Frontend)) instance.Frontend = InstanceModel.FrontendWeb;
                 instance.Frontend = instance.Frontend.ToLowerInvariant();

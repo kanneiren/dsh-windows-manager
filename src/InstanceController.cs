@@ -242,6 +242,20 @@ namespace DeepSeekHarnessManager
 
         public PortInspection InspectPort(int port)
         {
+            if (String.Equals(Config.RuntimeType, InstanceModel.RuntimeTypeWsl, StringComparison.OrdinalIgnoreCase))
+            {
+                WslRuntimeAdapter adapter = RuntimeAdapters.Get(Config) as WslRuntimeAdapter;
+                if (adapter == null) throw new InvalidOperationException("The WSL runtime adapter is unavailable.");
+                PortInspection wslInspection = adapter.InspectPort(Config, Plugin, port, launchProcess != null);
+                if (launchProcess != null && wslInspection.HttpVerified)
+                {
+                    wslInspection.ProcessId = launchProcess.ProcessId;
+                    wslInspection.Process = launchIdentity;
+                    wslInspection.ProcessVerified = true;
+                }
+                return wslInspection;
+            }
+
             int processId = PortMap.GetPreferredListenerProcessId(port);
             if (processId == 0)
             {

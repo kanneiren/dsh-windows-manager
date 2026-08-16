@@ -82,6 +82,8 @@ namespace DeepSeekHarnessManager
             Dictionary<string, IRuntimeAdapter> adapters = new Dictionary<string, IRuntimeAdapter>(StringComparer.OrdinalIgnoreCase);
             WindowsRuntimeAdapter windows = new WindowsRuntimeAdapter();
             adapters.Add(windows.RuntimeType, windows);
+            WslRuntimeAdapter wsl = new WslRuntimeAdapter();
+            adapters.Add(wsl.RuntimeType, wsl);
             return adapters;
         }
 

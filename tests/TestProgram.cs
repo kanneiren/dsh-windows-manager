@@ -51,6 +51,7 @@ namespace DeepSeekHarnessManager.Tests
                 {
                     Run("real DSH graceful shutdown", TestRealHarnessGracefulShutdown);
                     Run("runtime compatibility smoke test", TestRuntimeCompatibilitySmokeTest);
+                    Run("wsl runtime adapter resolution", TestWslRuntimeAdapterResolution);
                 }
             }
             finally
@@ -411,9 +412,10 @@ namespace DeepSeekHarnessManager.Tests
             RuntimeResolution direct = RuntimeResolver.Resolve(instance, plugin, 3080, String.Empty);
             Assert(viaAdapter.CommandPath == direct.CommandPath, "windows adapter should preserve runtime resolution");
             instance.RuntimeType = InstanceModel.RuntimeTypeWsl;
-            bool rejected = false;
-            try { RuntimeAdapters.Get(instance); } catch (InvalidOperationException) { rejected = true; }
-            Assert(rejected, "wsl runtime must be reserved until a WSL adapter is implemented");
+            instance.WslDistro = "TestDistro";
+            IRuntimeAdapter wslAdapter = RuntimeAdapters.Get(instance);
+            Assert(wslAdapter is WslRuntimeAdapter, "wsl runtime should resolve to WslRuntimeAdapter");
+            Assert(wslAdapter.RuntimeType == InstanceModel.RuntimeTypeWsl, "wsl adapter runtime type mismatch");
         }
 
         private static void TestExternalUnhealthyHarnessPreserved()
@@ -729,6 +731,64 @@ namespace DeepSeekHarnessManager.Tests
             string[] journals = Directory.GetFiles(AppPaths.UpdateDirectory, "*.journal.json");
             Assert(journals.Length == 1, "failed rollback should preserve one recovery journal");
             foreach (string journal in journals) File.Delete(journal);
+        }
+
+        private static void TestWslRuntimeAdapterResolution()
+        {
+            string[] distros = GetWslDistros();
+            if (distros.Length == 0) return;
+
+            PluginCatalog catalog = PluginCatalog.Load();
+            PluginDefinition plugin = catalog.Get("deepseek-harness-web");
+            InstanceConfig instance = CreateInstance(plugin, ReserveFreePort());
+            instance.RuntimeType = InstanceModel.RuntimeTypeWsl;
+            instance.WslDistro = distros[0];
+            instance.Workspace = AppPaths.DataDirectory;
+            RuntimeResolution resolution = null;
+            string selectedDistro = null;
+            foreach (string distro in distros)
+            {
+                instance.WslDistro = distro;
+                WslRuntimeAdapter adapter = new WslRuntimeAdapter();
+                RuntimeResolution candidate = adapter.Resolve(instance, plugin, instance.PreferredPort, String.Empty);
+                if (!String.IsNullOrWhiteSpace(candidate.Version))
+                {
+                    resolution = candidate;
+                    selectedDistro = distro;
+                    break;
+                }
+            }
+            if (resolution == null) return;
+            Assert(resolution.CommandPath.IndexOf("wsl.exe", StringComparison.OrdinalIgnoreCase) >= 0, "wsl adapter should launch through wsl.exe");
+            Assert(resolution.Arguments.Contains(selectedDistro), "wsl adapter should pass the configured distro");
+            Assert(!String.IsNullOrWhiteSpace(resolution.Version), "wsl adapter should resolve the installed DSH version");
+        }
+
+        private static string[] GetWslDistros()
+        {
+            try
+            {
+                string wsl = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "wsl.exe");
+                if (!File.Exists(wsl)) return new string[0];
+                using (Process process = new Process())
+                {
+                    process.StartInfo.FileName = wsl;
+                    process.StartInfo.Arguments = "--list --quiet";
+                    process.StartInfo.UseShellExecute = false;
+                    process.StartInfo.CreateNoWindow = true;
+                    process.StartInfo.RedirectStandardOutput = true;
+                    process.StartInfo.StandardOutputEncoding = Encoding.Unicode;
+                    if (!process.Start()) return new string[0];
+                    string output = process.StandardOutput.ReadToEnd();
+                    process.WaitForExit(10000);
+                    if (process.ExitCode != 0) return new string[0];
+                    return output.Replace("\0", String.Empty).Split(new char[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                }
+            }
+            catch
+            {
+                return new string[0];
+            }
         }
 
         private static void TestRuntimeCompatibilitySmokeTest()

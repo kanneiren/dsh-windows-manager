@@ -448,14 +448,14 @@ function wslInfo() {
     statusText: ''
   };
   const status = childProcess.spawnSync('wsl.exe', ['--status'], {
-    encoding: 'utf8',
+    encoding: 'utf16le',
     windowsHide: true
   });
   if (status.error) return result;
   result.installed = status.status === 0;
   if (status.stdout) result.statusText = status.stdout.trim();
   const list = childProcess.spawnSync('wsl.exe', ['--list', '--quiet'], {
-    encoding: 'utf8',
+    encoding: 'utf16le',
     windowsHide: true
   });
   if (!list.error && list.status === 0 && list.stdout) {
