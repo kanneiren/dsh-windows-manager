@@ -231,6 +231,8 @@ namespace DeepSeekHarnessManager
             response["trayEnabled"] = snapshot.TrayEnabled;
             response["startWithWindows"] = snapshot.StartWithWindows;
             response["desktopShortcut"] = snapshot.DesktopShortcut;
+            response["wslEnabled"] = snapshot.WslEnabled;
+            response["wslDefaultDistro"] = snapshot.WslDefaultDistro ?? String.Empty;
             List<Dictionary<string, object>> instances = BuildInstancesPayload(snapshot);
             response["instances"] = instances;
             foreach (Dictionary<string, object> instance in instances)
@@ -305,6 +307,7 @@ namespace DeepSeekHarnessManager
             data["displayName"] = instance.Name ?? String.Empty;
             data["state"] = instance.State.ToString().ToLowerInvariant();
             data["runtime"] = instance.RuntimeType ?? InstanceModel.RuntimeTypeWindows;
+            data["wslDistro"] = instance.WslDistro ?? String.Empty;
             data["ownership"] = instance.Ownership ?? InstanceModel.OwnershipAttached;
             data["pid"] = instance.ProcessId;
             data["port"] = instance.ActivePort > 0 ? instance.ActivePort : instance.PreferredPort;

@@ -37,7 +37,7 @@ Manager 对 CLI 和第三方前端暴露一个独立的本地命名管道：
 
 ## WSL 适配安全边界
 
-未来的 WSL2 支持遵循以下边界：Manager 只运行在 Windows，不在 WSL 内安装 Manager/daemon；WSL 内只有 DSH 和生成的 Runtime Bridge `--patch`。只对用户配置的 distro 执行内部命令白名单；使用 `wsl.exe` 进程作为存活句柄，Linux PID 只接受 WSL 内 Runtime Bridge 上报值，不通过 WMI 猜测；Runtime Bridge transport 使用 loopback TCP 和与 Windows 命名管道相同的 256 位 token，不暴露到局域网；默认停止方式是桥内 `shutdown`，不会默认执行 `wsl.exe --terminate <distro>`。
+未来的 WSL2 支持遵循以下边界：Manager 只运行在 Windows，不在 WSL 内安装 Manager/daemon；WSL 内只有 DSH 和生成的 Runtime Bridge `--patch`。WSL 默认关闭，检测只由用户显式触发（`wsl detect/enable/disable/status`）。只对用户配置的 distro 执行内部命令白名单；使用 `wsl.exe` 进程作为存活句柄，Linux PID 只接受 WSL 内 Runtime Bridge 上报值，不通过 WMI 猜测；Runtime Bridge transport 使用 loopback TCP 和与 Windows 命名管道相同的 256 位 token，不暴露到局域网；默认停止方式是桥内 `shutdown`，不会默认执行 `wsl.exe --terminate <distro>`。
 
 ## 优雅关闭与 IPC
 

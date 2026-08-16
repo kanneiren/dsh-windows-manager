@@ -105,7 +105,18 @@ dsh-windows-manager configure
 dsh-windows-manager configure --runtime windows --frontend web --tray true --shortcut false --autostart true
 ```
 
-The CLI edits `config.json` in place and preserves unknown fields. `--runtime` sets the default instance `RuntimeType`; `--frontend` sets `Frontend`; `--tray` sets `TrayEnabled`; `--shortcut` creates/removes the desktop shortcut; `--autostart` updates the per-user Run key only when explicitly requested. There is no first-run GUI wizard.
+The CLI edits `config.json` in place and preserves unknown fields. `--runtime` sets the default instance `RuntimeType`; `--frontend` sets `Frontend`; `--tray` sets `TrayEnabled`; `--shortcut` creates/removes the desktop shortcut; `--autostart` updates the per-user Run key only when explicitly requested. `--wsl-distro` enables and selects a WSL distro for `--runtime wsl`.
+
+WSL is disabled by default. The CLI exposes explicit on-demand commands:
+
+```text
+wsl detect
+wsl enable [--distro <name>]
+wsl status [--json]
+wsl disable
+```
+
+Detection runs `wsl.exe --status` and `wsl.exe --list --quiet` only when invoked; no background WSL polling exists.
 
 ## Runtime Adapter Boundary
 

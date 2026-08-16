@@ -51,6 +51,8 @@ namespace DeepSeekHarnessManager
         public bool? TrayEnabled { get; set; }
         public bool? StartWithWindows { get; set; }
         public bool? DesktopShortcut { get; set; }
+        public bool? WslEnabled { get; set; }
+        public string WslDefaultDistro { get; set; }
         public string DefaultInstanceId { get; set; }
         public List<InstanceConfig> Instances { get; set; }
     }
@@ -63,6 +65,7 @@ namespace DeepSeekHarnessManager
         public string Profile { get; set; }
         public string Runtime { get; set; }
         public string RuntimeType { get; set; }
+        public string WslDistro { get; set; }
         public string Frontend { get; set; }
         public string SourceRoot { get; set; }
         public string Workspace { get; set; }

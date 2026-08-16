@@ -83,6 +83,7 @@ namespace DeepSeekHarnessManager
                 Profile = source.Profile,
                 Runtime = source.Runtime,
                 RuntimeType = source.RuntimeType,
+                WslDistro = source.WslDistro,
                 Frontend = source.Frontend,
                 SourceRoot = source.SourceRoot,
                 Workspace = source.Workspace,

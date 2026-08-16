@@ -95,9 +95,32 @@ try {
   assert.equal(configured.Instances[0].RuntimeType, 'windows');
   assert.equal(configured.Instances[0].Frontend, 'web');
 
-  result = run(['configure', '--runtime', 'wsl']);
+  result = run(['configure', '--runtime', 'wsl', '--wsl-distro', 'TestDistro']);
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.equal(JSON.parse(fs.readFileSync(configPath, 'utf8')).Instances[0].RuntimeType, 'wsl');
+  const wslConfigured = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  assert.equal(wslConfigured.WslEnabled, true);
+  assert.equal(wslConfigured.WslDefaultDistro, 'TestDistro');
+  assert.equal(wslConfigured.Instances[0].RuntimeType, 'wsl');
+  assert.equal(wslConfigured.Instances[0].WslDistro, 'TestDistro');
+
+  result = run(['wsl', 'status', '--json']);
+  assert.equal(result.status, 0, result.stderr);
+  const wslStatus = JSON.parse(result.stdout);
+  assert.equal(wslStatus.enabled, true);
+  assert.equal(wslStatus.defaultDistro, 'TestDistro');
+  assert.ok(Array.isArray(wslStatus.distros));
+  assert.deepEqual(wslStatus.wslInstances, ['web']);
+
+  result = run(['wsl', 'detect', '--json']);
+  assert.ok([0, 1].includes(result.status), result.stderr);
+  const detected = JSON.parse(result.stdout);
+  assert.equal(typeof detected.installed, 'boolean');
+  assert.ok(Array.isArray(detected.distros));
+
+  result = run(['wsl', 'disable']);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(JSON.parse(fs.readFileSync(configPath, 'utf8')).WslEnabled, false);
+
   result = run(['configure', '--runtime', 'windows']);
   assert.equal(result.status, 0, result.stderr || result.stdout);
 

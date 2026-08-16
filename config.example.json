@@ -15,7 +15,8 @@
       "PreferredPort": 3080,
       "PinnedVersion": "0.1.0-rc.6",
       "RuntimeType": "windows",
-      "Frontend": "web"
+      "Frontend": "web",
+      "WslDistro": ""
     },
     {
       "Id": "source-dev",
@@ -29,10 +30,13 @@
       "PreferredPort": 3081,
       "PinnedVersion": "0.1.0-rc.6",
       "RuntimeType": "windows",
-      "Frontend": "web"
+      "Frontend": "web",
+      "WslDistro": ""
     }
   ],
   "TrayEnabled": true,
   "StartWithWindows": false,
-  "DesktopShortcut": true
+  "DesktopShortcut": true,
+  "WslEnabled": false,
+  "WslDefaultDistro": ""
 }

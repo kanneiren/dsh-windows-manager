@@ -103,6 +103,8 @@ if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
         TrayEnabled = $true
         StartWithWindows = $false
         DesktopShortcut = $(-not $NoShortcut)
+        WslEnabled = $false
+        WslDefaultDistro = ''
         DefaultInstanceId = 'web'
         Instances = @(
             [ordered]@{
@@ -112,6 +114,7 @@ if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
                 Profile = 'web'
                 Runtime = $Runtime
                 RuntimeType = 'windows'
+                WslDistro = ''
                 Frontend = 'web'
                 SourceRoot = $SourceRoot
                 Workspace = $Workspace

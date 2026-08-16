@@ -15,6 +15,7 @@
 | Ports | Configurable preferred port, bounded fallback selection, conflict details |
 | Frontends | `web` opens the local Web UI; `oh-dsh` and `custom` are reserved and fail explicitly instead of falling back to web |
 | Runtime adapter | `IRuntimeAdapter` boundary with a Windows implementation; WSL2 is planned as `WslRuntimeAdapter` with bridge-first state and loopback TCP transport, with no Manager software installed inside WSL |
+| WSL optional | Disabled by default; `wsl detect/enable/disable/status` and `configure --runtime wsl --wsl-distro <name>` provide explicit detection and switching without polling |
 | Multi-instance | Independent menu, status, port, workspace, runtime, and optional DSH home |
 | Configuration | Separate menu actions for manager `config.json` and each instance's DSH settings directory |
 | Shutdown | Authenticated versioned DSH IPC bridge (`ping`/`getStatus`/`getRuntimeInfo`/`shutdown`) and guarded manual termination fallback |

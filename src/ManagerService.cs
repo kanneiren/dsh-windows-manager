@@ -12,6 +12,8 @@ namespace DeepSeekHarnessManager
         public bool TrayEnabled { get; set; }
         public bool StartWithWindows { get; set; }
         public bool DesktopShortcut { get; set; }
+        public bool WslEnabled { get; set; }
+        public string WslDefaultDistro { get; set; }
         public string DefaultInstanceId { get; set; }
         public List<InstanceSnapshot> Instances { get; set; }
     }
@@ -24,6 +26,7 @@ namespace DeepSeekHarnessManager
         public string Profile { get; set; }
         public string Runtime { get; set; }
         public string RuntimeType { get; set; }
+        public string WslDistro { get; set; }
         public string Ownership { get; set; }
         public string Frontend { get; set; }
         public int ProcessId { get; set; }
@@ -129,6 +132,8 @@ namespace DeepSeekHarnessManager
             snapshot.TrayEnabled = !config.TrayEnabled.HasValue || config.TrayEnabled.Value;
             snapshot.StartWithWindows = config.StartWithWindows.HasValue && config.StartWithWindows.Value;
             snapshot.DesktopShortcut = config.DesktopShortcut.HasValue && config.DesktopShortcut.Value;
+            snapshot.WslEnabled = config.WslEnabled.HasValue && config.WslEnabled.Value;
+            snapshot.WslDefaultDistro = config.WslDefaultDistro ?? String.Empty;
             snapshot.DefaultInstanceId = config.DefaultInstanceId ?? String.Empty;
             snapshot.Instances = new List<InstanceSnapshot>();
             foreach (InstanceController controller in controllers)
@@ -140,6 +145,7 @@ namespace DeepSeekHarnessManager
                 item.Profile = controller.Config.Profile ?? String.Empty;
                 item.Runtime = controller.Config.Runtime ?? String.Empty;
                 item.RuntimeType = String.IsNullOrWhiteSpace(controller.Config.RuntimeType) ? InstanceModel.RuntimeTypeWindows : controller.Config.RuntimeType;
+                item.WslDistro = controller.Config.WslDistro ?? String.Empty;
                 item.Ownership = InstanceModel.ToText(controller.Ownership);
                 item.Frontend = String.IsNullOrWhiteSpace(controller.Config.Frontend) ? InstanceModel.FrontendWeb : controller.Config.Frontend;
                 item.ProcessId = controller.ProcessId;

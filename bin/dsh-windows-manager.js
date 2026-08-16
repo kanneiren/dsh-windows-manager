@@ -25,6 +25,9 @@ Usage:
   dsh-windows-manager status [--json]
   dsh-windows-manager diagnostics [--json]
   dsh-windows-manager configure [options]
+  dsh-windows-manager wsl status|detect [--json]
+  dsh-windows-manager wsl enable [--distro <name>]
+  dsh-windows-manager wsl disable
 
 Install options:
   --runtime <auto|global|npx|source>  Select the DSH runtime (default: auto)
@@ -437,6 +440,107 @@ function parseBoolOption(value, name) {
   throw new Error(`${name} expects true or false.`);
 }
 
+function wslInfo() {
+  const result = {
+    installed: false,
+    defaultDistro: '',
+    distros: [],
+    statusText: ''
+  };
+  const status = childProcess.spawnSync('wsl.exe', ['--status'], {
+    encoding: 'utf8',
+    windowsHide: true
+  });
+  if (status.error) return result;
+  result.installed = status.status === 0;
+  if (status.stdout) result.statusText = status.stdout.trim();
+  const list = childProcess.spawnSync('wsl.exe', ['--list', '--quiet'], {
+    encoding: 'utf8',
+    windowsHide: true
+  });
+  if (!list.error && list.status === 0 && list.stdout) {
+    result.installed = true;
+    result.distros = list.stdout.replace(/\0/g, '').split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+  }
+  return result;
+}
+
+async function wslStatus(args) {
+  const options = parseOptions(args, [], ['--json']);
+  if (!fs.existsSync(installedExe)) throw new Error(`DeepSeek Harness Manager is not installed. Run "dsh-windows-manager install" first.`);
+  const config = readJson(path.join(dataRoot, 'config.json')) || {};
+  const info = wslInfo();
+  const wslInstances = Array.isArray(config.Instances)
+    ? config.Instances.filter((item) => String(item.RuntimeType || '').toLowerCase() === 'wsl').map((item) => item.Id)
+    : [];
+  const result = {
+    installed: info.installed,
+    enabled: config.WslEnabled === true,
+    defaultDistro: config.WslDefaultDistro || '',
+    distros: info.distros,
+    wslInstances,
+    statusText: info.statusText
+  };
+  if (options['--json']) {
+    console.log(JSON.stringify(result, null, 2));
+  } else {
+    console.log(`WSL: ${info.installed ? 'installed' : 'not installed'}`);
+    console.log(`WSL support: ${result.enabled ? 'enabled' : 'disabled'}`);
+    if (result.defaultDistro) console.log(`Default distro: ${result.defaultDistro}`);
+    console.log(`Detected distros: ${result.distros.length ? result.distros.join(', ') : 'none'}`);
+    if (wslInstances.length) console.log(`WSL instances: ${wslInstances.join(', ')}`);
+  }
+  return 0;
+}
+
+async function wslDetect(args) {
+  const options = parseOptions(args, [], ['--json']);
+  const info = wslInfo();
+  if (options['--json']) {
+    console.log(JSON.stringify(info, null, 2));
+  } else {
+    console.log(`WSL: ${info.installed ? 'installed' : 'not installed'}`);
+    console.log(`Distros: ${info.distros.length ? info.distros.join(', ') : 'none'}`);
+  }
+  return info.installed ? 0 : 1;
+}
+
+async function wslEnable(args) {
+  const options = parseOptions(args, ['--distro'], []);
+  const configPath = path.join(dataRoot, 'config.json');
+  const config = readJson(configPath);
+  if (!config) throw new Error(`DeepSeek Harness Manager is not installed. Run "dsh-windows-manager install" first.`);
+  const info = wslInfo();
+  if (!info.installed) throw new Error('WSL is not installed or wsl.exe is unavailable. Install WSL and a distro first.');
+  let distro = options['--distro'] ? String(options['--distro']).trim() : '';
+  if (!distro) {
+    if (info.distros.length === 1) distro = info.distros[0];
+    else if (info.distros.length === 0) throw new Error('No WSL distros were detected.');
+    else throw new Error(`Multiple WSL distros detected (${info.distros.join(', ')}). Choose one with --distro.`);
+  }
+  if (!info.distros.includes(distro)) throw new Error(`WSL distro was not detected: ${distro}. Detected: ${info.distros.join(', ') || 'none'}`);
+  config.WslEnabled = true;
+  config.WslDefaultDistro = distro;
+  fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
+  console.log(`WSL support enabled with default distro: ${distro}`);
+  return 0;
+}
+
+async function wslDisable(args) {
+  parseOptions(args, [], []);
+  const configPath = path.join(dataRoot, 'config.json');
+  const config = readJson(configPath);
+  if (!config) throw new Error(`DeepSeek Harness Manager is not installed. Run "dsh-windows-manager install" first.`);
+  config.WslEnabled = false;
+  fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
+  const wslInstances = Array.isArray(config.Instances)
+    ? config.Instances.filter((item) => String(item.RuntimeType || '').toLowerCase() === 'wsl').map((item) => item.Id)
+    : [];
+  console.log('WSL support disabled.');
+  if (wslInstances.length) console.warn(`Warning: these instances still use runtimeType=wsl and will fail until WSL is enabled again: ${wslInstances.join(', ')}`);
+  return 0;
+}
+
 function question(query) {
   return new Promise((resolve) => {
     const readline = require('readline');
@@ -450,14 +554,8 @@ function question(query) {
 
 function detectRuntimes() {
   const runtimes = [{ id: 'windows', label: 'Windows' }];
-  const result = childProcess.spawnSync('wsl.exe', ['--list', '--quiet'], {
-    encoding: 'utf8',
-    windowsHide: true
-  });
-  if (!result.error && result.status === 0 && result.stdout) {
-    const distros = result.stdout.replace(/\0/g, '').split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
-    for (const distro of distros) runtimes.push({ id: 'wsl', label: `${distro} (WSL)` });
-  }
+  const info = wslInfo();
+  for (const distro of info.distros) runtimes.push({ id: 'wsl', label: `${distro} (WSL)` });
   return runtimes;
 }
 
@@ -530,7 +628,7 @@ function setAutostart(enabled) {
 async function configure(args) {
   const options = parseOptions(
     args,
-    ['--runtime', '--frontend', '--tray', '--shortcut', '--autostart'],
+    ['--runtime', '--frontend', '--tray', '--shortcut', '--autostart', '--wsl-distro'],
     []
   );
   if (!fs.existsSync(installedExe)) {
@@ -549,12 +647,14 @@ async function configure(args) {
   let tray;
   let shortcut;
   let autostart;
+  let wslDistro;
   if (Object.keys(options).length > 0) {
     runtimeType = options['--runtime'] ? String(options['--runtime']).toLowerCase() : undefined;
     frontend = options['--frontend'] ? String(options['--frontend']).toLowerCase() : undefined;
     tray = parseBoolOption(options['--tray'], '--tray');
     shortcut = parseBoolOption(options['--shortcut'], '--shortcut');
     autostart = parseBoolOption(options['--autostart'], '--autostart');
+    wslDistro = options['--wsl-distro'] ? String(options['--wsl-distro']).trim() : undefined;
   } else {
     const runtimes = detectRuntimes();
     const frontends = detectFrontends();
@@ -590,6 +690,21 @@ async function configure(args) {
     throw new Error('--frontend must be web, oh-dsh, or custom.');
   }
 
+  const finalRuntimeType = runtimeType || instance.RuntimeType || 'windows';
+  if (finalRuntimeType === 'wsl') {
+    if (!config.WslEnabled) config.WslEnabled = true;
+    const currentDistro = instance.WslDistro || config.WslDefaultDistro || '';
+    wslDistro = wslDistro || currentDistro;
+    if (!wslDistro) {
+      const info = wslInfo();
+      if (!info.installed) throw new Error('WSL is not installed or wsl.exe is unavailable.');
+      if (info.distros.length === 1) wslDistro = info.distros[0];
+      else if (info.distros.length === 0) throw new Error('No WSL distros were detected.');
+      else throw new Error(`Multiple WSL distros detected (${info.distros.join(', ')}). Specify --wsl-distro.`);
+    }
+    config.WslDefaultDistro = wslDistro;
+    instance.WslDistro = wslDistro;
+  }
   if (runtimeType) instance.RuntimeType = runtimeType;
   if (frontend) instance.Frontend = frontend;
   if (tray !== undefined) config.TrayEnabled = tray;
@@ -608,7 +723,8 @@ async function configure(args) {
   if (finalFrontend !== 'web') {
     console.warn(`dsh-windows-manager: Frontend "${finalFrontend}" is reserved and not implemented yet.`);
   }
-  console.log(`Configuration updated: runtime=${finalRuntime} frontend=${finalFrontend} tray=${config.TrayEnabled !== false} shortcut=${config.DesktopShortcut !== false} autostart=${config.StartWithWindows === true}`);
+  const distroSuffix = finalRuntime === 'wsl' ? ` wslDistro=${config.WslDefaultDistro || ''}` : '';
+  console.log(`Configuration updated: runtime=${finalRuntime} frontend=${finalFrontend} tray=${config.TrayEnabled !== false} shortcut=${config.DesktopShortcut !== false} autostart=${config.StartWithWindows === true}${distroSuffix}`);
   console.log('Restart the Manager if it is running for runtime/frontend/tray changes to take effect.');
   return 0;
 }
@@ -630,6 +746,14 @@ async function main() {
   if (command === 'status') return status(args);
   if (command === 'diagnostics') return diagnostics(args);
   if (command === 'configure') return configure(args);
+  if (command === 'wsl') {
+    const sub = args.shift();
+    if (sub === 'status') return wslStatus(args);
+    if (sub === 'detect') return wslDetect(args);
+    if (sub === 'enable') return wslEnable(args);
+    if (sub === 'disable') return wslDisable(args);
+    throw new Error(`Unknown wsl command: ${sub}. Use wsl status|detect|enable|disable.`);
+  }
   if (['open', 'start', 'stop', 'restart', 'exit'].includes(command)) {
     if (args.length > 0) throw new Error(`${command} does not accept additional arguments.`);
     return runManagerAction(command);

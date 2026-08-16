@@ -142,6 +142,7 @@ namespace DeepSeekHarnessManager
             instance.Profile = "web";
             instance.Runtime = "auto";
             instance.RuntimeType = InstanceModel.RuntimeTypeWindows;
+            instance.WslDistro = String.Empty;
             instance.Frontend = InstanceModel.FrontendWeb;
             instance.SourceRoot = String.Empty;
             instance.Workspace = workspace;
@@ -154,6 +155,8 @@ namespace DeepSeekHarnessManager
             config.TrayEnabled = true;
             config.StartWithWindows = false;
             config.DesktopShortcut = false;
+            config.WslEnabled = false;
+            config.WslDefaultDistro = String.Empty;
             config.DefaultInstanceId = instance.Id;
             config.Instances = new List<InstanceConfig>();
             config.Instances.Add(instance);
@@ -171,6 +174,9 @@ namespace DeepSeekHarnessManager
             if (!config.TrayEnabled.HasValue) config.TrayEnabled = true;
             if (!config.StartWithWindows.HasValue) config.StartWithWindows = false;
             if (!config.DesktopShortcut.HasValue) config.DesktopShortcut = false;
+            if (!config.WslEnabled.HasValue) config.WslEnabled = false;
+            if (config.WslDefaultDistro == null) config.WslDefaultDistro = String.Empty;
+            config.WslDefaultDistro = config.WslDefaultDistro.Trim();
             if (config.Instances == null || config.Instances.Count == 0) throw new InvalidDataException("At least one instance is required.");
             HashSet<string> ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             HashSet<int> preferredPorts = new HashSet<int>();
@@ -188,6 +194,16 @@ namespace DeepSeekHarnessManager
                 instance.RuntimeType = instance.RuntimeType.ToLowerInvariant();
                 if (instance.RuntimeType != InstanceModel.RuntimeTypeWindows && instance.RuntimeType != InstanceModel.RuntimeTypeWsl)
                     throw new InvalidDataException("Unsupported runtime type " + instance.RuntimeType + " for " + instance.Id);
+                if (instance.WslDistro == null) instance.WslDistro = String.Empty;
+                instance.WslDistro = instance.WslDistro.Trim();
+                if (instance.RuntimeType == InstanceModel.RuntimeTypeWsl)
+                {
+                    if (!config.WslEnabled.Value)
+                        throw new InvalidDataException("WSL support is disabled. Run dsh-windows-manager wsl enable before using runtime type wsl for " + instance.Id + ".");
+                    string effectiveDistro = String.IsNullOrWhiteSpace(instance.WslDistro) ? config.WslDefaultDistro : instance.WslDistro;
+                    if (String.IsNullOrWhiteSpace(effectiveDistro))
+                        throw new InvalidDataException("A WSL distro is required for instance " + instance.Id + ". Run dsh-windows-manager wsl enable --distro <name> or configure --wsl-distro <name>.");
+                }
                 if (String.IsNullOrWhiteSpace(instance.Frontend)) instance.Frontend = InstanceModel.FrontendWeb;
                 instance.Frontend = instance.Frontend.ToLowerInvariant();
                 if (instance.Frontend != InstanceModel.FrontendWeb && instance.Frontend != InstanceModel.FrontendOhDsh && instance.Frontend != InstanceModel.FrontendCustom)

@@ -86,6 +86,8 @@ namespace DeepSeekHarnessManager.Tests
             Assert(config.TrayEnabled.HasValue && config.TrayEnabled.Value, "default tray mode should be enabled");
             Assert(!config.StartWithWindows.Value, "Start with Windows should default to false");
             Assert(!config.DesktopShortcut.Value, "desktop shortcut should default to false in a source-created config");
+            Assert(!config.WslEnabled.Value, "WSL support should default to false");
+            Assert(config.WslDefaultDistro.Length == 0, "WSL default distro should start empty");
             config.TrayEnabled = false;
             store.Save(config);
             Assert(!store.LoadOrCreate().TrayEnabled.Value, "disabled tray mode was not preserved");
@@ -108,11 +110,18 @@ namespace DeepSeekHarnessManager.Tests
             reserved.RuntimeType = InstanceModel.RuntimeTypeWsl;
             reserved.Frontend = InstanceModel.FrontendOhDsh;
             config.Instances.Add(reserved);
+            bool disabledWslRejected = false;
+            try { store.Save(config); } catch (InvalidDataException) { disabledWslRejected = true; }
+            Assert(disabledWslRejected, "wsl runtime must be rejected while WSL support is disabled");
+            config.WslEnabled = true;
+            config.WslDefaultDistro = "TestDistro";
             store.Save(config);
             ManagerConfig reservedRead = store.LoadOrCreate();
-            Assert(reservedRead.Instances[reservedRead.Instances.Count - 1].RuntimeType == InstanceModel.RuntimeTypeWsl, "wsl runtime type must be accepted as a reserved value");
+            Assert(reservedRead.Instances[reservedRead.Instances.Count - 1].RuntimeType == InstanceModel.RuntimeTypeWsl, "wsl runtime type must be accepted when enabled");
             Assert(reservedRead.Instances[reservedRead.Instances.Count - 1].Frontend == InstanceModel.FrontendOhDsh, "oh-dsh frontend must be accepted as a reserved value");
             config.Instances.Remove(reserved);
+            config.WslEnabled = false;
+            config.WslDefaultDistro = String.Empty;
             store.Save(config);
         }
 
@@ -145,6 +154,8 @@ namespace DeepSeekHarnessManager.Tests
                 Assert(snapshot.TrayEnabled, "manager snapshot should expose tray mode");
                 Assert(!snapshot.StartWithWindows, "manager snapshot should expose autostart mode");
                 Assert(!snapshot.DesktopShortcut, "manager snapshot should expose shortcut mode");
+                Assert(!snapshot.WslEnabled, "manager snapshot should expose WSL enablement");
+                Assert(snapshot.WslDefaultDistro.Length == 0, "manager snapshot should expose the WSL default distro");
                 string details = service.GetInstanceDetails(snapshot.DefaultInstanceId);
                 Assert(details.IndexOf(snapshot.Instances[0].Name, StringComparison.Ordinal) >= 0, "manager service details should contain the instance name");
                 string diagnostics = service.GetDiagnosticsText();
@@ -195,6 +206,8 @@ namespace DeepSeekHarnessManager.Tests
                 Assert(BridgeProtocol.GetString(status, "frontend") == InstanceModel.FrontendWeb, "getStatus frontend mismatch");
                 Assert(BridgeProtocol.GetString(status, "ownership") == InstanceModel.OwnershipAttached, "getStatus ownership mismatch");
                 Assert(Convert.ToBoolean(status["trayEnabled"]), "getStatus trayEnabled mismatch");
+                Assert(!Convert.ToBoolean(status["wslEnabled"]), "getStatus wslEnabled mismatch");
+                Assert(BridgeProtocol.GetString(status, "wslDefaultDistro") == String.Empty, "getStatus wslDefaultDistro mismatch");
 
                 Dictionary<string, object> unknown = SendControl(server, "{\"protocolVersion\":1,\"command\":\"runCommand\"}");
                 Assert(!Convert.ToBoolean(unknown["ok"]), "unknown commands must be rejected");
@@ -803,6 +816,7 @@ namespace DeepSeekHarnessManager.Tests
             instance.Profile = "web";
             instance.Runtime = "auto";
             instance.RuntimeType = InstanceModel.RuntimeTypeWindows;
+            instance.WslDistro = String.Empty;
             instance.Frontend = InstanceModel.FrontendWeb;
             instance.SourceRoot = String.Empty;
             instance.Workspace = AppPaths.DataDirectory;
