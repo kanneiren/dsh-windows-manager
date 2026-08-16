@@ -19,15 +19,18 @@ All notable changes to this project are documented in this file.
 ### Manager Control Protocol v1
 
 - Per-user named pipe with current-user-only ACL.
-- Commands: `getVersion`, `getStatus`, `listInstances`, `start`, `stop`, `restart`, `open`, `exit`.
+- Commands: `getVersion`, `getStatus`, `listInstances`, `start`, `stop`, `restart`, `open`, `openWsl`, `exit`.
 - Secondary invocations forward through the pipe; no second Supervisor.
 
 ### WSL2
 
 - Optional and disabled by default.
-- `wsl status/detect/enable/disable` plus `configure --runtime wsl --wsl-distro`.
+- `wsl status/detect/enable/disable/open` plus `configure --runtime wsl --wsl-distro`.
 - `WslRuntimeAdapter`: global, npx, and source runtime resolution through `wsl.exe`.
 - Runtime Bridge TCP transport with the same 256-bit token; no WMI PID guessing.
+- Non-Ubuntu distros supported with `bash`/`sh` fallback and `/mnt`/`wsl.localhost` path fallback.
+- Attached WSL DSH adoption with verified Linux PID/port stop.
+- One-click `wsl open` starts WSL DSH on port 3088 (or nearest free port) and opens the Web UI.
 - No Manager software installed inside WSL.
 
 ### Frontends and configuration
@@ -35,10 +38,13 @@ All notable changes to this project are documented in this file.
 - `FrontendLauncher` resolves `web`; `oh-dsh` and `custom` fail explicitly.
 - `configure` interactive/non-interactive for runtime/frontend/tray/shortcut/autostart.
 - Diagnostics: Copy diagnostics, Manager/DSH log actions, `diagnostics --json`.
+- Arbitrary Windows/WSL DSH port detection from the tray with attached-instance registration.
+- Compact tray layout with current-instance selector and grouped submenus.
 
 ### Tests
 
-- 29 C# tests, named-pipe and TCP Runtime Bridge tests, npm CLI integration tests, package validation, and real WSL adapter tests.
+- 34 C# tests, named-pipe and TCP Runtime Bridge tests, npm CLI integration tests, package validation, and real WSL adapter/detection/lifecycle tests.
+- Performance: idle UI change-version short-circuit, shared HTTP probe, WSL path cache, and allocation reductions in port lookup.
 
 ## 0.2.1
 
