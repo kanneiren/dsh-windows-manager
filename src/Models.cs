@@ -84,15 +84,6 @@ namespace DeepSeekHarnessManager
         public List<RuntimeDefinition> Runtimes { get; set; }
         public UpdateDefinition Update { get; set; }
         public RuntimeBridgeDefinition RuntimeBridge { get; set; }
-        // Legacy plugin manifests (<= 0.2.1) used "Companion". Keep reading
-        // that key so installed layouts upgrade without reconfiguration;
-        // new manifests use "RuntimeBridge" only.
-        [System.Web.Script.Serialization.ScriptIgnore]
-        public RuntimeBridgeDefinition Companion
-        {
-            get { return RuntimeBridge; }
-            set { if (RuntimeBridge == null) RuntimeBridge = value; }
-        }
         [System.Web.Script.Serialization.ScriptIgnore]
         public string DirectoryPath { get; set; }
     }

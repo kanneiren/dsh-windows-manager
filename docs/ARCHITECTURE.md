@@ -49,9 +49,9 @@ Separating application and data files allows upgrades and default uninstall oper
 
 ## Host Components
 
-`Program` creates a per-user mutex and legacy named Windows event handles. A second invocation forwards `open`, `start`, `stop`, `restart`, or `exit` through the Manager Control pipe when available, with the named events retained as an older-primary fallback; it never creates a second manager. The process stays a single EXE: `Program` constructs `ManagerService` (core), starts `ManagerControlServer`, and then runs either `TrayFrontend` (`TrayEnabled=true`) or `HeadlessFrontend` (`TrayEnabled=false`) against the same `IManagerService`.
+`Program` creates a per-user mutex. A second invocation forwards its action through the Manager Control pipe and exits; there is no named-event fallback and never a second manager. The process stays a single EXE: `Program` constructs `ManagerService` (core), starts `ManagerControlServer`, and then runs either `TrayFrontend` (`TrayEnabled=true`) or `HeadlessFrontend` (`TrayEnabled=false`) against the same `IManagerService`.
 
-`ManagerService` implements `IManagerService` and owns the configured `InstanceController` list, lifecycle actions, action signals, 24-hour update scheduling, frontend-open actions, and configuration access. `TrayFrontend` owns only the notification icon, menus, language selection, balloons, and UI marshaling; it no longer constructs or calls controllers and update infrastructure directly.
+`ManagerService` implements `IManagerService` and owns the configured `InstanceController` list, lifecycle actions, 24-hour update scheduling, frontend-open actions, and configuration access. `TrayFrontend` owns only the notification icon, menus, language selection, balloons, and UI marshaling; it no longer constructs or calls controllers and update infrastructure directly.
 
 The dependency direction is:
 
@@ -70,7 +70,7 @@ DshSupervisor / InstanceController / UpdateManager / Runtime Bridge
 
 `ManagerService`, `InstanceController`, `UpdateManager`, and process-safety code do not reference `NotifyIcon`, tray menus, `MessageBox`, or `IWin32Window`. In headless mode, `SilentManagerInteraction` handles decisions without UI and the same Manager Control pipe remains the only external interface. `HeadlessFrontend` keeps the WinForms message loop in the same EXE solely for timers and synchronization; it owns no tray resources. User decisions cross the `IManagerInteraction` boundary; `WinFormsManagerInteraction` in `Dialogs.cs` is the tray implementation, and `SilentManagerInteraction` exists for tests and future headless use. Both layers still compile into the single `DeepSeekHarnessManager.exe` process; this is logical decoupling only, not process separation.
 
-The one-second WinForms timer exists only for cross-process action signals and to coalesce IPC/process notifications into UI updates. State detection is event-driven when possible:
+The one-second WinForms timer exists for lifecycle ticking and to coalesce IPC/process notifications into UI updates. State detection is event-driven when possible:
 
 - A manager-launched DSH process is monitored through the Windows `Process.Exited` event backed by the native process handle.
 - When the DSH plugin is reachable, `IpcBridgeConnection` keeps an authenticated named-pipe connection open and receives `ready`, `stopping`, and `exiting` events plus authoritative status responses.
@@ -86,7 +86,7 @@ The one-second WinForms timer exists only for cross-process action signals and t
 
 `RuntimeType` is `windows` or `wsl`. Only `windows` is implemented; the field is reserved now so configuration and snapshots do not hard-code a Windows singleton. `Frontend` is `web`, `oh-dsh`, or `custom`; only `web` is implemented.
 
-Instance state records `Ownership`: `managed` when this Manager launched the process and has full lifecycle control, `attached` when the process was started externally and was later discovered/adopted. Legacy state files without `Ownership` default to `attached`; a Manager restart keeps `managed` ownership only when the persisted PID still matches the verified process.
+Instance state records `Ownership`: `managed` when this Manager launched the process and has full lifecycle control, `attached` when the process was started externally and was later discovered/adopted. A Manager restart keeps `managed` ownership only when the persisted PID still matches the verified process.
 
 The manager always launches DSH with explicit `--host 127.0.0.1 --port <port>` arguments. Port `3080` is only the plugin default. An external DSH process on a custom port is adopted only when that port is configured for an instance and both fingerprints match.
 
@@ -166,7 +166,7 @@ Supported events:
 - `stopping` — shutdown was requested through the bridge or Cordis disposal began.
 - `exiting` — the DSH exit path was entered after an accepted bridge shutdown.
 
-The plugin still accepts the original `{"action":"shutdown","token":"..."}` envelope so previously launched DSH processes remain stoppable. New requests require the same 256-bit launch token; malformed messages, unsupported protocol versions, unknown commands, and unauthorized requests get explicit error responses. No unauthenticated local process can query or control DSH.
+Requests require the same 256-bit launch token; malformed messages, unsupported protocol versions, unknown commands, and unauthorized requests get explicit error responses. No unauthenticated local process can query or control DSH.
 
 `getStatus`/`getRuntimeInfo` only report values the plugin can observe reliably: `process.pid`, the actual `webServer.port`, the configured launch profile, `DSH_HOME` resolution, and the DSH version found by walking from `process.argv[1]` to the `@deepseek-ai/dsh` package manifest. The version and port are omitted/null rather than guessed when unavailable.
 
@@ -192,11 +192,12 @@ start
 stop
 restart
 open
+exit
 ```
 
 Every response carries `protocolVersion: 1`. Unknown commands, malformed JSON, and unsupported protocol versions receive explicit error responses. The protocol intentionally has no `runCommand`, PowerShell, npm proxy, or arbitrary file read/write commands.
 
-A second Manager invocation tries the control pipe first and falls back to the legacy named-event activation path when talking to an older primary, so old and new invocations remain compatible and never start a second Supervisor.
+A second Manager invocation is accepted only through the control pipe; it retries briefly while the primary starts and never creates a second Supervisor.
 
 ## State Source Selection
 

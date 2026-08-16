@@ -709,10 +709,7 @@ namespace DeepSeekHarnessManager
 
         private void SaveRunningState(PortInspection inspection)
         {
-            bool modelFieldsMissing = persistedState == null
-                || String.IsNullOrWhiteSpace(persistedState.Ownership)
-                || String.IsNullOrWhiteSpace(persistedState.StartedAtUtc);
-            if (inspection.ProcessId == savedProcessId && inspection.Port == savedPort && persistedState != null && !modelFieldsMissing) return;
+            if (inspection.ProcessId == savedProcessId && inspection.Port == savedPort && persistedState != null) return;
             if (persistedState == null) persistedState = new PersistedInstanceState();
             ApplyInspectionOwnership(inspection);
             persistedState.Port = inspection.Port;
@@ -1014,19 +1011,6 @@ namespace DeepSeekHarnessManager
                 return;
             }
 
-            if (response != null && !BridgeProtocol.IsVersioned(response) &&
-                String.Equals(BridgeProtocol.ErrorCode(response), "unauthorized", StringComparison.OrdinalIgnoreCase))
-            {
-                // The running DSH still has the original single-purpose
-                // shutdown plugin. Keep legacy graceful stop working and let
-                // fallback discovery remain the state source.
-                bridgeProtocolIncompatible = true;
-                bridgeError = "The running DSH plugin predates the versioned Runtime Bridge protocol; legacy fallback is active.";
-                FileLog.Info(Config.Id + ": " + bridgeError);
-                RaiseChanged();
-                return;
-            }
-
             bridgeError = response == null ? Localization.Text("Bridge.Rejected") : BridgeProtocol.DescribeError(response);
             FileLog.Warn("DSH IPC bridge rejected " + Config.Id + ": " + bridgeError);
             bridgeConnectAttempts++;
@@ -1141,12 +1125,8 @@ namespace DeepSeekHarnessManager
 
         private static InstanceOwnership ResolvePersistedOwnership(PersistedInstanceState state)
         {
-            if (state == null) return InstanceOwnership.Attached;
-            if (!String.IsNullOrWhiteSpace(state.Ownership)) return InstanceModel.ParseOwnership(state.Ownership);
-            // Legacy state files did not record ownership. When in doubt,
-            // prefer the safer Attached default instead of assuming full
-            // lifecycle control over an externally discovered process.
-            return InstanceOwnership.Attached;
+            if (state == null || String.IsNullOrWhiteSpace(state.Ownership)) return InstanceOwnership.Attached;
+            return InstanceModel.ParseOwnership(state.Ownership);
         }
 
         private static DateTime? ParseUtc(string value)

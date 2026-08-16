@@ -9,7 +9,7 @@ Schema version 1 fields:
 - `ProcessPatterns` used for identification and safe-stop eligibility.
 - `Runtimes` containing command candidates, requirements, arguments, working directory and version file.
 - `Update` containing npm and Git sources.
-- `RuntimeBridge` containing the Cordis bridge module, entry id, and `BridgeProtocolVersion`. The legacy `Companion` key is still accepted for installed-layout compatibility.
+- `RuntimeBridge` containing the Cordis bridge module, entry id, and `BridgeProtocolVersion`.
 
 ## Runtime Bridge Protocol
 
@@ -25,7 +25,6 @@ Responses use `messageType: "response"`, echo `requestId`, and carry `ok`, `payl
 
 Status payloads contain only values available inside DSH: `pid`, actual bound `port`, `host`, `dshVersion` when the `@deepseek-ai/dsh` manifest can be resolved from the running entry script, launched `profile`, resolved `dshHome`, `nodeVersion`, and `cwd`.
 
-The original `{"action":"shutdown","token":"..."}` envelope remains accepted so a Manager can still stop a DSH process that was launched by an older Manager version.
 
 Supported tokens:
 

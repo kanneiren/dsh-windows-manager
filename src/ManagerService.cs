@@ -65,6 +65,7 @@ namespace DeepSeekHarnessManager
         void TickInstances();
         void Tick();
         void DrainNotifications();
+        void RequestExit();
         void HandleInitialAction(string action);
         void StartAutomaticUpdateChecks();
         void Open(string instanceId);
@@ -90,7 +91,6 @@ namespace DeepSeekHarnessManager
         private readonly ManagerConfig config;
         private readonly ConfigurationStore configurationStore;
         private readonly UpdateManager updateManager;
-        private readonly SignalSet signals;
         private readonly IManagerInteraction interaction;
         private readonly List<InstanceController> controllers;
         private readonly Dictionary<string, InstanceController> controllersById;
@@ -99,11 +99,10 @@ namespace DeepSeekHarnessManager
         private readonly object updateSync = new object();
         private bool disposed;
 
-        public ManagerService(ManagerConfig managerConfig, PluginCatalog catalog, ConfigurationStore store, SignalSet signalSet, IManagerInteraction managerInteraction)
+        public ManagerService(ManagerConfig managerConfig, PluginCatalog catalog, ConfigurationStore store, IManagerInteraction managerInteraction)
         {
             config = managerConfig;
             configurationStore = store;
-            signals = signalSet;
             interaction = managerInteraction ?? SilentManagerInteraction.Instance;
             controllers = new List<InstanceController>();
             controllersById = new Dictionary<string, InstanceController>(StringComparer.OrdinalIgnoreCase);
@@ -179,19 +178,6 @@ namespace DeepSeekHarnessManager
 
         public void Tick()
         {
-            if (signals != null)
-            {
-                if (signals.Open.WaitOne(0)) Open(null);
-                if (signals.Start.WaitOne(0)) Start(null);
-                if (signals.Stop.WaitOne(0)) Stop(null, false);
-                if (signals.Restart.WaitOne(0)) Restart(null);
-                if (signals.Exit.WaitOne(0))
-                {
-                    RaiseExitRequested();
-                    return;
-                }
-            }
-
             TickInstances();
 
             DateTime now = DateTime.UtcNow;
@@ -210,6 +196,11 @@ namespace DeepSeekHarnessManager
         public void DrainNotifications()
         {
             foreach (InstanceController controller in controllers) controller.DrainBridgeMessages();
+        }
+
+        public void RequestExit()
+        {
+            RaiseExitRequested();
         }
 
         public void HandleInitialAction(string action)

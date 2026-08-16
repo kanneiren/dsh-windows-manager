@@ -8,7 +8,6 @@ export const name = 'dsh-windows-lifecycle'
 
 const PROTOCOL_VERSION = 1
 const MAX_INPUT_BYTES = 64 * 1024
-const LEGACY_SHUTDOWN_ACTION = 'shutdown'
 const COMMANDS = new Set(['ping', 'getStatus', 'getRuntimeInfo', 'shutdown'])
 const EVENT_NAMES = new Set(['ready', 'stopping', 'exiting'])
 
@@ -239,25 +238,6 @@ export async function apply(ctx, config = {}) {
     }
   }
 
-  const handleLegacyShutdown = (socket, request) => {
-    if (!matchesToken(request.token, token)) {
-      socket.end('{"ok":false,"error":"unauthorized"}\n')
-      return
-    }
-    authenticatedSockets.add(socket)
-    if (shutdownRequested) {
-      socket.end('{"ok":true,"alreadyRequested":true}\n')
-      return
-    }
-    shutdownRequested = true
-    // The legacy client is one-shot: acknowledge before announcing, so the
-    // caller observes its own response first.
-    socket.end('{"ok":true}\n')
-    broadcast('stopping', { reason: 'manager-requested-shutdown' })
-    broadcast('exiting', { reason: 'manager-requested-shutdown', state: 'exiting' })
-    exitAfterFlush()
-  }
-
   const handleCommand = (socket, request) => {
     const validationError = validateMessage(request)
     if (validationError === 'protocol-version-unsupported') {
@@ -324,10 +304,6 @@ export async function apply(ctx, config = {}) {
           } catch {
             send(socket, errorResponse(null, 'invalid-json', 'The request is not valid JSON.'))
             socket.end()
-            return
-          }
-          if (request && typeof request.action === 'string' && request.action === LEGACY_SHUTDOWN_ACTION) {
-            handleLegacyShutdown(socket, request)
             return
           }
           handleCommand(socket, request)

@@ -45,7 +45,7 @@ Do not describe the manager package as the DSH runtime. They are separate packag
 
 ## File Map
 
-- `src/Program.cs`: process entry point, single-instance mutex, Manager Control forwarding, and legacy external action signals.
+- `src/Program.cs`: process entry point, single-instance mutex, and Manager Control forwarding.
 - `src/ManagerService.cs`: `IManagerService` facade owning controllers, lifecycle orchestration, update scheduling, and frontend-open/configuration actions.
 - `src/ManagerControlProtocol.cs`: Manager Control Protocol v1 wire format, per-user pipe name, version helper, and short-lived client.
 - `src/ManagerControlServer.cs`: async local named-pipe server with current-user-only ACL; no TCP and no polling.
@@ -57,7 +57,7 @@ Do not describe the manager package as the DSH runtime. They are separate packag
 - `src/RuntimeAdapter.cs`: `IRuntimeAdapter` / `IRuntimeProcess` boundary and registry; only `WindowsRuntimeAdapter` is implemented.
 - `src/IpcBridge.cs`: versioned named-pipe protocol client, runtime-info parsing, and persistent event connection.
 - `src/PortProcess.cs`: port ownership, process identity, protection, and safe termination.
-- `src/GracefulShutdown.cs`: authenticated named-pipe shutdown client with legacy compatibility.
+- `src/GracefulShutdown.cs`: authenticated versioned Runtime Bridge shutdown client and per-launch patch generation.
 - `src/UpdateManager.cs`: cached checks and confirmed update execution.
 - `src/Configuration.cs`: config creation, normalization, and validation.
 - `plugins/deepseek-harness-web/plugin.json`: DSH launch, probe, runtime, update, and bridge declarations.

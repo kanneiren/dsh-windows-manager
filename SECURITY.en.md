@@ -33,13 +33,13 @@ The Manager exposes a separate local named pipe for the CLI and third-party fron
 \\.\pipe\dsh-windows-manager-control-{user-sid}
 ```
 
-Only the current Windows user can read and write it. It listens on no TCP endpoint and is not reachable from the local network or internet. Protocol v1 contains only `getVersion`, `getStatus`, `listInstances`, `start`, `stop`, `restart`, and `open`, and every response carries `protocolVersion`. It offers no arbitrary command execution, PowerShell, npm proxy, or arbitrary file read/write. It accepts one JSON object per line with a 64 KiB input limit.
+Only the current Windows user can read and write it. It listens on no TCP endpoint and is not reachable from the local network or internet. Protocol v1 contains only `getVersion`, `getStatus`, `listInstances`, `start`, `stop`, `restart`, `open`, and `exit`, and every response carries `protocolVersion`. It offers no arbitrary command execution, PowerShell, npm proxy, or arbitrary file read/write. It accepts one JSON object per line with a 64 KiB input limit.
 
 ## Graceful Shutdown and IPC
 
 Each manager-launched DSH instance receives a unique named-pipe name and a random 256-bit hexadecimal token through a generated local patch. The pipe accepts only authenticated `ping`, `getStatus`, `getRuntimeInfo`, and `shutdown` commands; the DSH-side plugin verifies the token before calling `ctx.appExit(0)`.
 
-The protocol is newline-delimited JSON and distinguishes command, response, and event messages. The plugin rejects unknown commands, malformed messages, and unsupported protocol versions, and provides no arbitrary command-execution capability. The original `{"action":"shutdown","token":"..."}` envelope remains accepted for DSH processes launched by older Manager versions.
+The protocol is newline-delimited JSON and distinguishes command, response, and event messages. The plugin rejects unknown commands, malformed messages, and unsupported protocol versions, and provides no arbitrary command-execution capability.
 
 Pipe names and tokens are launch-specific. They are not listening TCP endpoints. A failed or unavailable bridge does not silently fall back to killing the process.
 

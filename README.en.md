@@ -27,7 +27,7 @@ Architecturally, the native tray process is an out-of-process Supervisor (.NET F
 - Right-click the tray icon to open, start, stop, or restart DSH; view status and version information; check for updates; open logs; or exit the manager.
 - Verifies both the HTTP page and the process command instead of identifying DSH solely by `node.exe` or a port number.
 - If another program is using port 3080, you can choose a free port, view details about the owner, or terminate the unknown process after explicit confirmation.
-- Uses a DSH Runtime Bridge plugin and an authenticated named pipe for graceful shutdown plus authoritative PID, port, version, and lifecycle events; legacy shutdown messages remain compatible.
+- Uses a DSH Runtime Bridge plugin and an authenticated named pipe for graceful shutdown plus authoritative PID, port, version, and lifecycle events.
 - Supports global npm installations, pinned-version npx installations, and Git source checkouts.
 - The configuration model supports multiple profiles/instances, but creates only one Web instance by default.
 
@@ -122,7 +122,7 @@ dsh-windows-manager configure --runtime windows --frontend web --tray true --sho
 
 `3080` is only the default port for new instances; it is not hardcoded. For a new installation, use `--port 4000` to select another port. Re-running the installation command does not overwrite the configuration of an existing installation. Instead, open the manager configuration file from the tray menu, edit the instance's `PreferredPort` in `config.json`, then exit and restart the manager. The manager explicitly passes `--port` to DSH. A manually started external DSH process can be safely adopted only when its port matches the instance configuration.
 
-While the Manager is running, CLI `status` / `open` / `start` / `stop` / `restart` commands are forwarded to the primary over the local named pipe `\\.\pipe\dsh-windows-manager-control-{user}` instead of starting a second supervisor. Manager Control Protocol v1 provides only `getVersion`, `getStatus`, `listInstances`, `start`, `stop`, `restart`, and `open`; it is accessible only to the current Windows user, listens on no TCP endpoint, and offers no arbitrary command execution.
+While the Manager is running, CLI `status` / `open` / `start` / `stop` / `restart` / `exit` commands are forwarded to the primary over the local named pipe `\\.\pipe\dsh-windows-manager-control-{user}` instead of starting a second supervisor. Manager Control Protocol v1 provides `getVersion`, `getStatus`, `listInstances`, `start`, `stop`, `restart`, `open`, and `exit`; it is accessible only to the current Windows user, listens on no TCP endpoint, and offers no arbitrary command execution.
 
 `open` honors the instance `Frontend` setting: `web` opens the local Web UI, while `oh-dsh` and `custom` are reserved and report an explicit not-configured error instead of silently falling back to web.
 
@@ -273,7 +273,6 @@ The bridge is now a versioned runtime protocol, not a single-purpose shutdown ch
 
 A named pipe is not a network port and is not exposed to the local network or the internet. An externally started DSH process that did not load the Runtime Bridge plugin can still be adopted and opened, but stopping it explicitly prompts whether to use forced termination as a fallback.
 
-The original single-purpose `{"action":"shutdown","token":"..."}` message is still accepted so DSH processes launched by older Manager versions remain stoppable.
 
 The `plugins/deepseek-harness-web` directory also declares `dsh.bundle.patch`, so the same module can be installed as a regular DSH plugin package. Without a configured `pipeName` and `token` it stays inert and opens no unauthenticated pipe.
 
@@ -330,7 +329,7 @@ Test coverage includes:
 - Dual HTTP and process fingerprints.
 - npm, npx, and source runtime adapters.
 - Adoption of an already-running instance on port 3080.
-- Versioned named-pipe protocol, authentication, status queries, lifecycle events, and legacy shutdown compatibility.
+- Versioned named-pipe protocol, authentication, status queries, and lifecycle events.
 - Starting a real DSH instance on a random port and shutting it down gracefully through Cordis.
 - Post-update random-port compatibility smoke tests and rollback transactions for global npm, npx, and source installations.
 - Isolated npm CLI installation, in-place upgrades, status queries, configuration preservation, and uninstallation.

@@ -132,8 +132,11 @@ namespace DeepSeekHarnessManager
                     return;
                 }
 
+                string command = BridgeProtocol.GetString(request, "command").ToLowerInvariant();
+                bool exitAfterResponse = String.Equals(command, "exit", StringComparison.OrdinalIgnoreCase);
                 Dictionary<string, object> response = await ExecuteRequestOnContext(request);
                 await WriteResponse(pipe, response);
+                if (exitAfterResponse) ExecuteExitOnContext();
             }
             catch (Exception exception)
             {
@@ -143,6 +146,16 @@ namespace DeepSeekHarnessManager
             {
                 try { pipe.Dispose(); } catch { }
             }
+        }
+
+        private void ExecuteExitOnContext()
+        {
+            if (requestContext == null || System.Threading.SynchronizationContext.Current == requestContext)
+            {
+                manager.RequestExit();
+                return;
+            }
+            requestContext.Post(delegate { manager.RequestExit(); }, null);
         }
 
         private async Task<Dictionary<string, object>> ExecuteRequestOnContext(Dictionary<string, object> request)
@@ -184,6 +197,12 @@ namespace DeepSeekHarnessManager
             if (command == "getstatus") return BuildGetStatusResponse(command);
             if (command == "start" || command == "stop" || command == "restart" || command == "open")
                 return ExecuteInstanceAction(command, instanceId);
+            if (command == "exit")
+            {
+                Dictionary<string, object> response = ManagerControlProtocol.NewResponse(command, true);
+                response["message"] = "The primary Manager will exit.";
+                return response;
+            }
 
             return ManagerControlProtocol.ErrorResponse(command, "unknown-command", "The command is not supported by Manager Control Protocol v1.");
         }

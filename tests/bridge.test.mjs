@@ -56,15 +56,12 @@ try {
   if (!statusMessage.ok || statusMessage.payload.pid !== process.pid) throw new Error('versioned getStatus did not return the DSH PID')
   if (!['starting', 'ready'].includes(statusMessage.payload.state)) throw new Error('unexpected DSH state')
 
-  const legacyRejected = await request({ action: 'shutdown', token: '0'.repeat(64) })
-  if (!legacyRejected.includes('unauthorized')) throw new Error('legacy wrong token was not rejected')
-  if (exitCode !== undefined) throw new Error('legacy wrong token triggered appExit')
-
-  const accepted = await request({ action: 'shutdown', token })
-  if (!accepted.includes('"ok":true')) throw new Error('legacy shutdown token was not accepted')
+  const shutdown = await request({ protocolVersion: 1, messageType: 'command', requestId: 'r4', type: 'shutdown', token, payload: {} })
+  const shutdownMessage = JSON.parse(shutdown)
+  if (!shutdownMessage.ok) throw new Error('versioned shutdown was not accepted')
   await Promise.race([exitPromise, new Promise((_, reject) => setTimeout(() => reject(new Error('appExit timeout')), 3000))])
   if (exitCode !== 0) throw new Error(`unexpected exit code ${exitCode}`)
-  console.log('PASS named-pipe protocol, authentication, status, and appExit')
+  console.log('PASS named-pipe protocol, authentication, status, and versioned appExit')
 } finally {
   if (typeof disposer === 'function') await disposer()
 }

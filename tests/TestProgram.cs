@@ -41,7 +41,6 @@ namespace DeepSeekHarnessManager.Tests
                 Run("runtime resolution", TestRuntimeResolution);
                 Run("runtime adapter registry", TestRuntimeAdapters);
                 Run("runtime bridge patch", TestRuntimeBridgePatch);
-                Run("runtime bridge manifest alias", TestRuntimeBridgeManifestAlias);
                 Run("frontend launcher", TestFrontendLauncher);
                 Run("bridge protocol", TestBridgeProtocol);
                 Run("log retention", TestLogRetention);
@@ -134,7 +133,7 @@ namespace DeepSeekHarnessManager.Tests
             PluginCatalog catalog = PluginCatalog.Load();
             ConfigurationStore store = new ConfigurationStore(catalog);
             ManagerConfig config = store.LoadOrCreate();
-            using (ManagerService service = new ManagerService(config, catalog, store, null, SilentManagerInteraction.Instance))
+            using (ManagerService service = new ManagerService(config, catalog, store, SilentManagerInteraction.Instance))
             {
                 ManagerSnapshot snapshot = service.GetSnapshot();
                 Assert(snapshot.Instances.Count == 1, "manager service should expose one default instance");
@@ -174,7 +173,7 @@ namespace DeepSeekHarnessManager.Tests
             PluginCatalog catalog = PluginCatalog.Load();
             ConfigurationStore store = new ConfigurationStore(catalog);
             ManagerConfig config = store.LoadOrCreate();
-            using (ManagerService service = new ManagerService(config, catalog, store, null, SilentManagerInteraction.Instance))
+            using (ManagerService service = new ManagerService(config, catalog, store, SilentManagerInteraction.Instance))
             using (ManagerControlServer server = new ManagerControlServer(service, "dsh-windows-manager-test-" + Guid.NewGuid().ToString("N")))
             {
                 server.Start();
@@ -206,6 +205,9 @@ namespace DeepSeekHarnessManager.Tests
                 Assert(!Convert.ToBoolean(unsupported["ok"]), "unsupported protocol versions must be rejected");
                 Dictionary<string, object> unsupportedError = BridgeProtocol.GetValue(unsupported, "error") as Dictionary<string, object>;
                 Assert(unsupportedError != null && BridgeProtocol.GetString(unsupportedError, "code") == "protocol-version-unsupported", "unsupported protocol error code missing");
+
+                Dictionary<string, object> exitResponse = SendControl(server, "{\"protocolVersion\":1,\"command\":\"exit\"}");
+                Assert(Convert.ToBoolean(exitResponse["ok"]), "exit should be accepted by the control protocol");
             }
         }
 
@@ -473,19 +475,6 @@ namespace DeepSeekHarnessManager.Tests
             Assert(!FrontendLauncher.TryResolve(instance, plugin, 3080, out url, out error), "custom frontend should not be silently opened");
         }
 
-        private static void TestRuntimeBridgeManifestAlias()
-        {
-            string legacy = "{\"Companion\":{\"Enabled\":true,\"Module\":\"cordis/windows-lifecycle.mjs\",\"EntryId\":\"windows-lifecycle\",\"BridgeProtocolVersion\":1}}";
-            PluginDefinition legacyPlugin = JsonStore.Deserialize<PluginDefinition>(legacy);
-            Assert(legacyPlugin.RuntimeBridge != null && legacyPlugin.RuntimeBridge.Enabled, "legacy Companion manifest key was not mapped to RuntimeBridge");
-            Assert(legacyPlugin.RuntimeBridge.BridgeProtocolVersion == 1, "legacy Companion bridge protocol version was not preserved");
-
-            string current = "{\"RuntimeBridge\":{\"Enabled\":true,\"Module\":\"cordis/windows-lifecycle.mjs\",\"EntryId\":\"windows-lifecycle\",\"BridgeProtocolVersion\":1}}";
-            PluginDefinition currentPlugin = JsonStore.Deserialize<PluginDefinition>(current);
-            Assert(currentPlugin.RuntimeBridge != null && currentPlugin.RuntimeBridge.Enabled, "RuntimeBridge manifest key was not read");
-            Assert(currentPlugin.RuntimeBridge.Module == "cordis/windows-lifecycle.mjs", "RuntimeBridge module was not read");
-        }
-
         private static void TestBridgeProtocol()
         {
             Dictionary<string, object> payload = new Dictionary<string, object>();
@@ -501,9 +490,8 @@ namespace DeepSeekHarnessManager.Tests
             Assert(roundTrip.RequestId == command.RequestId, "bridge command round trip failed");
             Assert(BridgeProtocol.GetString(roundTrip.Payload, "pong") == "True", "bridge payload round trip failed");
 
-            BridgeMessage legacy = BridgeProtocol.Deserialize("{\"ok\":false,\"error\":\"unauthorized\"}");
-            Assert(!BridgeProtocol.IsVersioned(legacy), "legacy shutdown responses must be detected as unversioned");
-            Assert(BridgeProtocol.ErrorCode(legacy) == "unauthorized", "legacy string error code was not parsed");
+            BridgeMessage rejection = BridgeProtocol.Deserialize("{\"protocolVersion\":1,\"ok\":false,\"error\":{\"code\":\"unauthorized\"}}");
+            Assert(BridgeProtocol.ErrorCode(rejection) == "unauthorized", "bridge error code was not parsed");
         }
 
         private static void TestLogRetention()

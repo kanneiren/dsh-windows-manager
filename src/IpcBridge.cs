@@ -159,11 +159,6 @@ namespace DeepSeekHarnessManager
             return "The IPC bridge rejected the request.";
         }
 
-        public static bool IsVersioned(BridgeMessage message)
-        {
-            return message != null && message.ProtocolVersion > 0;
-        }
-
         public static BridgeRuntimeInfo ParseRuntimeInfo(BridgeMessage message)
         {
             if (message == null || message.Payload == null) return null;

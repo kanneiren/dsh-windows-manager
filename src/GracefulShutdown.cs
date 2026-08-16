@@ -1,10 +1,8 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.IO.Pipes;
 using System.Security.Cryptography;
 using System.Text;
-using System.Threading.Tasks;
 
 namespace DeepSeekHarnessManager
 {
@@ -65,25 +63,11 @@ namespace DeepSeekHarnessManager
 
             BridgeMessage response = RequestVersioned(pipeName, token, timeoutMilliseconds, out error);
             if (response != null && response.Ok) return true;
-            if (response != null && BridgeProtocol.IsVersioned(response) &&
-                !String.Equals(BridgeProtocol.ErrorCode(response), "bridge-timeout", StringComparison.OrdinalIgnoreCase) &&
+            if (response != null && !String.Equals(BridgeProtocol.ErrorCode(response), "bridge-timeout", StringComparison.OrdinalIgnoreCase) &&
                 !String.Equals(BridgeProtocol.ErrorCode(response), "bridge-disconnected", StringComparison.OrdinalIgnoreCase))
             {
                 if (String.IsNullOrWhiteSpace(error)) error = BridgeProtocol.DescribeError(response);
-                return false;
             }
-
-            // Old DSH builds only understand the original single-purpose
-            // shutdown envelope. Try that compatibility path once before
-            // reporting failure to the user.
-            string legacyError;
-            bool legacyAccepted = RequestLegacy(pipeName, token, timeoutMilliseconds, out legacyError);
-            if (legacyAccepted)
-            {
-                error = String.Empty;
-                return true;
-            }
-            if (String.IsNullOrWhiteSpace(error)) error = legacyError;
             return false;
         }
 
@@ -110,42 +94,5 @@ namespace DeepSeekHarnessManager
             }
         }
 
-        private static bool RequestLegacy(string pipeName, string token, int timeoutMilliseconds, out string error)
-        {
-            error = String.Empty;
-            try
-            {
-                using (NamedPipeClientStream pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous))
-                {
-                    pipe.Connect(timeoutMilliseconds);
-                    pipe.ReadMode = PipeTransmissionMode.Byte;
-                    string request = JsonStore.Serialize(new Dictionary<string, string> { { "action", "shutdown" }, { "token", token } }) + "\n";
-                    byte[] requestBytes = Encoding.UTF8.GetBytes(request);
-                    pipe.Write(requestBytes, 0, requestBytes.Length);
-                    pipe.Flush();
-                    Task<string> responseTask = Task.Factory.StartNew(delegate
-                    {
-                        using (StreamReader reader = new StreamReader(pipe, Encoding.UTF8, false, 1024, true)) return reader.ReadLine();
-                    });
-                    if (!responseTask.Wait(timeoutMilliseconds))
-                    {
-                        error = Localization.Text("Bridge.Timeout");
-                        return false;
-                    }
-                    string response = responseTask.Result ?? String.Empty;
-                    if (response.IndexOf("\"ok\":true", StringComparison.OrdinalIgnoreCase) < 0)
-                    {
-                        error = Localization.Text("Bridge.Rejected");
-                        return false;
-                    }
-                    return true;
-                }
-            }
-            catch (Exception exception)
-            {
-                error = exception.Message;
-                return false;
-            }
-        }
     }
 }

@@ -17,7 +17,7 @@
 | Runtime adapter | `IRuntimeAdapter` boundary with a Windows implementation; `wsl` is reserved and reports that its adapter is not implemented yet |
 | Multi-instance | Independent menu, status, port, workspace, runtime, and optional DSH home |
 | Configuration | Separate menu actions for manager `config.json` and each instance's DSH settings directory |
-| Shutdown | Authenticated versioned DSH IPC bridge (`ping`/`getStatus`/`getRuntimeInfo`/`shutdown`) with legacy single-purpose shutdown fallback and guarded manual termination |
+| Shutdown | Authenticated versioned DSH IPC bridge (`ping`/`getStatus`/`getRuntimeInfo`/`shutdown`) and guarded manual termination fallback |
 | Updates | 24-hour checks, confirmed installation, isolated compatibility smoke test, and verified rollback |
 | Performance | Event-driven process and IPC monitoring for Manager-owned DSH; fallback WMI/HTTP probes only when the bridge is unavailable |
 | Languages | English, Simplified Chinese, and startup-time Windows language selection |
@@ -42,7 +42,7 @@ The npm CLI supports:
 install, uninstall, open, start, stop, restart, exit, status
 ```
 
-`open`, `start`, `stop`, and `restart` target the configured `DefaultInstanceId`. When the Manager is running, the CLI forwards these actions through the local Manager Control pipe; otherwise it starts the Manager. `exit` retains the legacy event activation path. `status` lists every configured instance and merges authoritative Manager state when the control pipe is available.
+`open`, `start`, `stop`, `restart`, and `exit` target the configured `DefaultInstanceId`. When the Manager is running, the CLI forwards every action through the local Manager Control pipe; otherwise it starts the Manager. `status` lists every configured instance and merges authoritative Manager state when the control pipe is available.
 
 ## Configuration Boundaries
 

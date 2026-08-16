@@ -26,7 +26,7 @@ For a manager-launched instance with the DSH IPC bridge connected, there is no s
 
 ## Optimizations
 
-- The one-second UI timer remains for responsive cross-process action signals and coalescing background notifications.
+- The one-second UI timer remains for lifecycle ticking and coalescing background notifications.
 - Manager-launched processes are monitored with the Windows process-exit event; no periodic existence check is used while the handle is alive.
 - When the authenticated IPC bridge is connected, the Manager waits for `ready`, `stopping`, and `exiting` events and does not run steady WMI, process-enumeration, port, or HTTP probes; measured stable-state CPU is 0%.
 - Fallback discovery remains available for externally launched DSH, old/absent plugins, protocol mismatch, diagnostics, and user actions. It uses one-second startup probes and five-second fallback probes only while it is the selected state source.

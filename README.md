@@ -27,7 +27,7 @@ DSH（npm 包 `@deepseek-ai/dsh`）是实际提供 Web UI 与 Agent 能力的程
 - 右键托盘：打开、启动、停止、重启、查看状态、查看版本、检查更新、打开日志和退出管理器。
 - 同时验证 HTTP 页面和进程命令，不会仅凭 `node.exe` 或端口号认定它是 DSH。
 - 3080 被其他程序占用时，可选择空闲端口、查看占用详情或明确确认后结束未知进程。
-- 通过 DSH Runtime Bridge 插件和认证命名管道执行优雅关闭，并从 DSH 内部获取权威 PID、端口、版本与生命周期事件；旧版关闭消息保持兼容。
+- 通过 DSH Runtime Bridge 插件和认证命名管道执行优雅关闭，并从 DSH 内部获取权威 PID、端口、版本与生命周期事件。
 - 支持 npm 全局安装、固定版本 npx 和 Git 源码检出。
 - 配置模型支持多个 profile/实例，默认只创建一个 Web 实例。
 
@@ -122,7 +122,7 @@ dsh-windows-manager configure --runtime windows --frontend web --tray true --sho
 
 `3080` 只是新实例的默认端口，并非写死。新安装可通过 `--port 4000` 指定；已有安装不会因再次执行安装命令而覆盖配置，应通过托盘菜单打开管理器配置文件，修改 `config.json` 中实例的 `PreferredPort`，然后退出并重新启动管理器。管理器会显式向 DSH 传递 `--port`，外部手动启动的 DSH 也只有在端口与实例配置一致时才会被安全接管。
 
-Manager 运行期间，CLI 的 `status` / `open` / `start` / `stop` / `restart` 会通过本机命名管道 `\\.\pipe\dsh-windows-manager-control-{user}` 交给 Primary，而不是启动第二个 Supervisor。该 Manager Control Protocol v1 只提供 `getVersion`、`getStatus`、`listInstances`、`start`、`stop`、`restart`、`open`，仅允许当前 Windows 用户访问，不监听 TCP，也不提供任意命令执行。
+Manager 运行期间，CLI 的 `status` / `open` / `start` / `stop` / `restart` / `exit` 会通过本机命名管道 `\\.\pipe\dsh-windows-manager-control-{user}` 交给 Primary，而不是启动第二个 Supervisor。该 Manager Control Protocol v1 提供 `getVersion`、`getStatus`、`listInstances`、`start`、`stop`、`restart`、`open`、`exit`，仅允许当前 Windows 用户访问，不监听 TCP，也不提供任意命令执行。
 
 `open` 遵循实例的 `Frontend` 配置：当前 `web` 打开本地 Web UI；`oh-dsh` 和 `custom` 已预留，但未配置实现时会明确报错，不会静默退回 Web。
 
@@ -254,7 +254,7 @@ powershell.exe -ExecutionPolicy Bypass -File .\scripts\Install.ps1 `
 
 ## 常驻性能
 
-外部命令信号保持每秒响应。由管理器启动并已连接 DSH IPC 桥的实例不再进行周期性的 WMI、进程枚举、端口或 HTTP 轮询：进程存活由 Windows 进程句柄事件负责，运行状态和生命周期事件由认证命名管道推送。后备探测仅用于外部接管、插件不可用、协议不兼容、启动阶段和诊断场景。
+Manager Control Pipe 请求即时响应。由管理器启动并已连接 DSH IPC 桥的实例不再进行周期性的 WMI、进程枚举、端口或 HTTP 轮询：进程存活由 Windows 进程句柄事件负责，运行状态和生命周期事件由认证命名管道推送。后备探测仅用于外部接管、插件不可用、协议不兼容、启动阶段和诊断场景。
 
 在 32 逻辑处理器的当前测试机上，0.2.0 稳定运行（桥已连接、settle 后 60 秒采样）中位数约为 `109.81 MB` 工作集、`62.65 MB` 私有内存、`846` 句柄、`20` 线程，60 秒平均 CPU 为 `0.000%`（单核等效）；同一机器 0.1.0 对照为 `59.07 MB`、`31.72 MB`、`473` 句柄、`12` 线程、`0.103%` CPU。事件驱动重构以小幅内存/句柄增加换取 CPU 归零：资源差异主要来自 CLR/WinForms/native 运行时基础设施（线程池、IO 完成端口、GC 段、持久认证管道与 WinForms 资源），业务托管堆占比很小（几 MB），复测数值稳定无泄漏；运行时使用默认 Workstation GC。内存不是本项目的主要优化目标。复现方法见 [性能文档](docs/PERFORMANCE.md)。进程没有分配 GPU 上下文。
 
@@ -276,7 +276,6 @@ powershell.exe -ExecutionPolicy Bypass -File .\scripts\Install.ps1 `
 
 `plugins/deepseek-harness-web` 目录同时声明了 `dsh.bundle.patch`，可作为正式 DSH 插件包安装；未配置 `pipeName`/`token` 时插件保持 inert，不会开放未认证管道。
 
-旧版单用途 `{"action":"shutdown","token":"..."}` 消息仍被接受，以兼容升级前已启动的 DSH。
 
 
 ## 端口安全

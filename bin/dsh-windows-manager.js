@@ -139,7 +139,7 @@ async function runManagerAction(action) {
     throw new Error(`DeepSeek Harness Manager is not installed. Run "dsh-windows-manager install" first.`);
   }
   const info = managerInfo();
-  if (info.running && info.sid && action !== 'exit') {
+  if (info.running && info.sid) {
     try {
       const response = await requestControl(action, null, info.sid);
       if (response && response.ok === true) {
@@ -149,14 +149,10 @@ async function runManagerAction(action) {
       if (response && response.error && response.error.message) {
         throw new Error(response.error.message);
       }
+      throw new Error('The Manager returned an invalid control response.');
     } catch (error) {
-      const code = error && error.code ? String(error.code) : '';
-      if (!['ENOENT', 'EINVAL', 'EACCES', 'ENOTFOUND'].includes(code)) {
-        console.error(`dsh-windows-manager: ${error.message}`);
-        return 1;
-      }
-      // The primary may be an older Manager without the control pipe.
-      // Fall back to the legacy named-event activation path.
+      console.error(`dsh-windows-manager: ${error.message}`);
+      return 1;
     }
   }
   const child = childProcess.spawn(installedExe, ['--action', action], {
