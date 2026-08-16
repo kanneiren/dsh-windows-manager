@@ -88,9 +88,15 @@ namespace DeepSeekHarnessManager
                 item.Checked = String.Equals(instanceId, selectedInstanceId, StringComparison.OrdinalIgnoreCase);
                 item.Click += delegate
                 {
+                    Point keepLocation = Cursor.Position;
+                    try
+                    {
+                        if (menu.Visible) keepLocation = new Point(menu.Left, menu.Top);
+                    }
+                    catch { }
                     selectedInstanceId = instanceId;
                     RebuildMenu();
-                    try { menu.Show(Cursor.Position); } catch { }
+                    try { menu.Show(keepLocation); } catch { }
                 };
                 instanceSelector.DropDownItems.Add(item);
             }
