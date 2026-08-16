@@ -185,6 +185,18 @@ namespace DeepSeekHarnessManager
             return info;
         }
 
+        private CommandResult RunCommand(InstanceController controller, string command, IList<string> arguments, string workingDirectory, int timeoutMilliseconds)
+        {
+            if (String.Equals(controller.Config.RuntimeType, InstanceModel.RuntimeTypeWsl, StringComparison.OrdinalIgnoreCase))
+                return RuntimeAdapters.Get(controller.Config).RunCommand(controller.Config, command, arguments, workingDirectory, timeoutMilliseconds);
+            return commandExecutor(command, arguments, workingDirectory, timeoutMilliseconds);
+        }
+
+        private static bool IsWsl(InstanceController controller)
+        {
+            return String.Equals(controller.Config.RuntimeType, InstanceModel.RuntimeTypeWsl, StringComparison.OrdinalIgnoreCase);
+        }
+
         private UpdateInfo CheckSource(InstanceController controller, RuntimeResolution runtime, bool force)
         {
             string cachePath = GetCachePath(controller, runtime);
@@ -193,16 +205,16 @@ namespace DeepSeekHarnessManager
             if (cache == null) cache = NewCache(controller, runtime);
             cache.LastAttemptAtUtc = DateTime.UtcNow.ToString("o");
             cache.CheckedAtUtc = cache.LastAttemptAtUtc;
-            string git = AppPaths.FindOnPath("git.exe") ?? AppPaths.FindOnPath("git");
+            string git = IsWsl(controller) ? "git" : (AppPaths.FindOnPath("git.exe") ?? AppPaths.FindOnPath("git"));
             if (String.IsNullOrWhiteSpace(git)) throw new InvalidOperationException("Git was not found.");
             try
             {
-                CommandResult local = CommandRunner.RunCapture(git, new string[] { "-C", controller.Config.SourceRoot, "rev-parse", "HEAD" }, controller.Config.SourceRoot, 8000);
+                CommandResult local = RunCommand(controller, git, new string[] { "-C", controller.Config.SourceRoot, "rev-parse", "HEAD" }, controller.Config.SourceRoot, 8000);
                 if (local.ExitCode != 0) throw new InvalidOperationException(local.StandardError.Trim());
                 string repository = controller.Plugin.Update.GithubRepository;
                 string branch = controller.Plugin.Update.GithubBranch;
                 string url = "https://github.com/" + repository + ".git";
-                CommandResult remote = CommandRunner.RunCapture(git, new string[] { "ls-remote", url, "refs/heads/" + branch }, controller.Config.SourceRoot, 15000);
+                CommandResult remote = RunCommand(controller, git, new string[] { "ls-remote", url, "refs/heads/" + branch }, controller.Config.SourceRoot, 15000);
                 if (remote.ExitCode != 0) throw new InvalidOperationException(remote.TimedOut ? "Git source update check timed out after 15 seconds." : remote.StandardError.Trim());
                 string localSha = local.StandardOutput.Trim();
                 string[] remoteParts = remote.StandardOutput.Trim().Split(new char[] { '\t', ' ' }, StringSplitOptions.RemoveEmptyEntries);
@@ -293,19 +305,19 @@ namespace DeepSeekHarnessManager
 
             if (String.Equals(kind, "source", StringComparison.OrdinalIgnoreCase))
             {
-                string git = AppPaths.FindOnPath("git.exe") ?? AppPaths.FindOnPath("git");
+                string git = IsWsl(controller) ? "git" : (AppPaths.FindOnPath("git.exe") ?? AppPaths.FindOnPath("git"));
                 if (String.IsNullOrWhiteSpace(git))
                 {
                     outcome.Error = "Git was not found.";
                     return outcome;
                 }
-                CommandResult status = commandExecutor(git, new string[] { "-C", controller.Config.SourceRoot, "status", "--porcelain" }, controller.Config.SourceRoot, 10000);
+                CommandResult status = RunCommand(controller, git, new string[] { "-C", controller.Config.SourceRoot, "status", "--porcelain" }, controller.Config.SourceRoot, 10000);
                 if (!Succeeded(status) || !String.IsNullOrWhiteSpace(status.StandardOutput))
                 {
                     outcome.Error = "The source checkout has local changes. Automatic update was refused.";
                     return outcome;
                 }
-                CommandResult sha = commandExecutor(git, new string[] { "-C", controller.Config.SourceRoot, "rev-parse", "HEAD" }, controller.Config.SourceRoot, 10000);
+                CommandResult sha = RunCommand(controller, git, new string[] { "-C", controller.Config.SourceRoot, "rev-parse", "HEAD" }, controller.Config.SourceRoot, 10000);
                 if (!Succeeded(sha))
                 {
                     outcome.Error = Describe(sha);
@@ -399,20 +411,20 @@ namespace DeepSeekHarnessManager
             }
             if (String.Equals(runtime.Definition.Kind, "global", StringComparison.OrdinalIgnoreCase))
             {
-                string npm = AppPaths.FindOnPath("npm.cmd");
-                if (String.IsNullOrWhiteSpace(npm)) return Failure("npm.cmd was not found.");
-                return commandExecutor(npm, new string[] { "install", "--global", controller.Plugin.Update.PackageName + "@" + latestVersion }, controller.Config.Workspace, 300000);
+                string npm = IsWsl(controller) ? "npm" : AppPaths.FindOnPath("npm.cmd");
+                if (String.IsNullOrWhiteSpace(npm)) return Failure("npm was not found.");
+                return RunCommand(controller, npm, new string[] { "install", "--global", controller.Plugin.Update.PackageName + "@" + latestVersion }, controller.Config.Workspace, 300000);
             }
             if (String.Equals(runtime.Definition.Kind, "source", StringComparison.OrdinalIgnoreCase))
             {
-                string git = AppPaths.FindOnPath("git.exe") ?? AppPaths.FindOnPath("git");
-                string pnpm = AppPaths.FindOnPath("pnpm.cmd");
+                string git = IsWsl(controller) ? "git" : (AppPaths.FindOnPath("git.exe") ?? AppPaths.FindOnPath("git"));
+                string pnpm = IsWsl(controller) ? "pnpm" : AppPaths.FindOnPath("pnpm.cmd");
                 if (String.IsNullOrWhiteSpace(git) || String.IsNullOrWhiteSpace(pnpm)) return Failure("Git and pnpm are required for source updates.");
-                CommandResult pull = commandExecutor(git, new string[] { "-C", controller.Config.SourceRoot, "pull", "--ff-only" }, controller.Config.SourceRoot, 120000);
+                CommandResult pull = RunCommand(controller, git, new string[] { "-C", controller.Config.SourceRoot, "pull", "--ff-only" }, controller.Config.SourceRoot, 120000);
                 if (!Succeeded(pull)) return pull;
-                CommandResult install = commandExecutor(pnpm, new string[] { "install", "--frozen-lockfile" }, controller.Config.SourceRoot, 300000);
+                CommandResult install = RunCommand(controller, pnpm, new string[] { "install", "--frozen-lockfile" }, controller.Config.SourceRoot, 300000);
                 if (!Succeeded(install)) return install;
-                return commandExecutor(pnpm, new string[] { "run", "build" }, controller.Config.SourceRoot, 600000);
+                return RunCommand(controller, pnpm, new string[] { "run", "build" }, controller.Config.SourceRoot, 600000);
             }
             return Failure("Unsupported update runtime: " + runtime.Definition.Kind);
         }
@@ -427,22 +439,22 @@ namespace DeepSeekHarnessManager
             }
             if (String.Equals(runtime.Definition.Kind, "global", StringComparison.OrdinalIgnoreCase))
             {
-                string npm = AppPaths.FindOnPath("npm.cmd");
-                if (String.IsNullOrWhiteSpace(npm)) return Failure("npm.cmd was not found for rollback.");
-                return commandExecutor(npm, new string[] { "install", "--global", controller.Plugin.Update.PackageName + "@" + BaseVersion(previousVersion) }, controller.Config.Workspace, 300000);
+                string npm = IsWsl(controller) ? "npm" : AppPaths.FindOnPath("npm.cmd");
+                if (String.IsNullOrWhiteSpace(npm)) return Failure("npm was not found for rollback.");
+                return RunCommand(controller, npm, new string[] { "install", "--global", controller.Plugin.Update.PackageName + "@" + BaseVersion(previousVersion) }, controller.Config.Workspace, 300000);
             }
             if (String.Equals(runtime.Definition.Kind, "source", StringComparison.OrdinalIgnoreCase))
             {
-                string git = AppPaths.FindOnPath("git.exe") ?? AppPaths.FindOnPath("git");
-                string pnpm = AppPaths.FindOnPath("pnpm.cmd");
+                string git = IsWsl(controller) ? "git" : (AppPaths.FindOnPath("git.exe") ?? AppPaths.FindOnPath("git"));
+                string pnpm = IsWsl(controller) ? "pnpm" : AppPaths.FindOnPath("pnpm.cmd");
                 if (String.IsNullOrWhiteSpace(git) || String.IsNullOrWhiteSpace(pnpm)) return Failure("Git and pnpm are required for source rollback.");
-                CommandResult status = commandExecutor(git, new string[] { "-C", controller.Config.SourceRoot, "status", "--porcelain" }, controller.Config.SourceRoot, 10000);
+                CommandResult status = RunCommand(controller, git, new string[] { "-C", controller.Config.SourceRoot, "status", "--porcelain" }, controller.Config.SourceRoot, 10000);
                 if (!Succeeded(status) || !String.IsNullOrWhiteSpace(status.StandardOutput)) return Failure("Source rollback was refused because the checkout changed during the update.");
-                CommandResult reset = commandExecutor(git, new string[] { "-C", controller.Config.SourceRoot, "reset", "--hard", previousSourceSha }, controller.Config.SourceRoot, 30000);
+                CommandResult reset = RunCommand(controller, git, new string[] { "-C", controller.Config.SourceRoot, "reset", "--hard", previousSourceSha }, controller.Config.SourceRoot, 30000);
                 if (!Succeeded(reset)) return reset;
-                CommandResult install = commandExecutor(pnpm, new string[] { "install", "--frozen-lockfile" }, controller.Config.SourceRoot, 300000);
+                CommandResult install = RunCommand(controller, pnpm, new string[] { "install", "--frozen-lockfile" }, controller.Config.SourceRoot, 300000);
                 if (!Succeeded(install)) return install;
-                return commandExecutor(pnpm, new string[] { "run", "build" }, controller.Config.SourceRoot, 600000);
+                return RunCommand(controller, pnpm, new string[] { "run", "build" }, controller.Config.SourceRoot, 600000);
             }
             return Failure("Unsupported rollback runtime: " + runtime.Definition.Kind);
         }
@@ -480,9 +492,9 @@ namespace DeepSeekHarnessManager
 
         private string ReadSourceSha(InstanceController controller)
         {
-            string git = AppPaths.FindOnPath("git.exe") ?? AppPaths.FindOnPath("git");
+            string git = IsWsl(controller) ? "git" : (AppPaths.FindOnPath("git.exe") ?? AppPaths.FindOnPath("git"));
             if (String.IsNullOrWhiteSpace(git)) return String.Empty;
-            CommandResult result = commandExecutor(git, new string[] { "-C", controller.Config.SourceRoot, "rev-parse", "HEAD" }, controller.Config.SourceRoot, 10000);
+            CommandResult result = RunCommand(controller, git, new string[] { "-C", controller.Config.SourceRoot, "rev-parse", "HEAD" }, controller.Config.SourceRoot, 10000);
             return Succeeded(result) ? result.StandardOutput.Trim() : String.Empty;
         }
 

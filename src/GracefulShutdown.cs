@@ -34,10 +34,26 @@ namespace DeepSeekHarnessManager
             string directory = AppPaths.InstanceRuntimeDirectory(instance.Id);
             string patchPath = Path.Combine(directory, "windows-lifecycle.patch.yml");
             string entryId = String.IsNullOrWhiteSpace(plugin.RuntimeBridge.EntryId) ? "windows-lifecycle" : plugin.RuntimeBridge.EntryId;
+            string moduleUri;
+            if (wslTransport)
+            {
+                try
+                {
+                    moduleUri = new Uri("file://" + WslRuntimeAdapter.ConvertToWslPath(instance.WslDistro, modulePath)).AbsoluteUri;
+                }
+                catch
+                {
+                    moduleUri = new Uri(modulePath).AbsoluteUri;
+                }
+            }
+            else
+            {
+                moduleUri = new Uri(modulePath).AbsoluteUri;
+            }
             StringBuilder yaml = new StringBuilder();
             yaml.AppendLine("- insert:");
             yaml.AppendLine("    - id: " + YamlSingle(entryId));
-            yaml.AppendLine("      name: " + YamlSingle(new Uri(modulePath).AbsoluteUri));
+            yaml.AppendLine("      name: " + YamlSingle(moduleUri));
             yaml.AppendLine("      config:");
             if (wslTransport)
             {

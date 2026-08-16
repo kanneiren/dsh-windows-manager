@@ -54,6 +54,7 @@ namespace DeepSeekHarnessManager.Tests
                     Run("real DSH graceful shutdown", TestRealHarnessGracefulShutdown);
                     Run("runtime compatibility smoke test", TestRuntimeCompatibilitySmokeTest);
                     Run("wsl runtime adapter resolution", TestWslRuntimeAdapterResolution);
+                    Run("wsl runtime command and launch", TestWslRuntimeCommandAndLaunch);
                 }
             }
             finally
@@ -821,6 +822,57 @@ namespace DeepSeekHarnessManager.Tests
             Assert(resolution.CommandPath.IndexOf("wsl.exe", StringComparison.OrdinalIgnoreCase) >= 0, "wsl adapter should launch through wsl.exe");
             Assert(resolution.Arguments.Contains(selectedDistro), "wsl adapter should pass the configured distro");
             Assert(!String.IsNullOrWhiteSpace(resolution.Version), "wsl adapter should resolve the installed DSH version");
+        }
+
+        private static void TestWslRuntimeCommandAndLaunch()
+        {
+            string[] distros = GetWslDistros();
+            if (distros.Length == 0) return;
+            string distro = null;
+            foreach (string candidate in distros)
+            {
+                try
+                {
+                    InstanceConfig probe = CreateInstance(PluginCatalog.Load().Get("deepseek-harness-web"), 3080);
+                    probe.RuntimeType = InstanceModel.RuntimeTypeWsl;
+                    probe.WslDistro = candidate;
+                    WslRuntimeAdapter probeAdapter = new WslRuntimeAdapter();
+                    if (!String.IsNullOrWhiteSpace(probeAdapter.Resolve(probe, PluginCatalog.Load().Get("deepseek-harness-web"), 3080, String.Empty).Version)) { distro = candidate; break; }
+                }
+                catch { }
+            }
+            if (distro == null) return;
+
+            PluginCatalog catalog = PluginCatalog.Load();
+            PluginDefinition plugin = catalog.Get("deepseek-harness-web");
+            ConfigurationStore store = new ConfigurationStore(catalog);
+            InstanceConfig instance = CreateInstance(plugin, ReserveFreePort());
+            instance.Id = "wsl-integration";
+            instance.Runtime = "global";
+            instance.RuntimeType = InstanceModel.RuntimeTypeWsl;
+            instance.WslDistro = distro;
+            instance.Workspace = AppPaths.DataDirectory;
+            WslRuntimeAdapter adapter = new WslRuntimeAdapter();
+            CommandResult node = adapter.RunCommand(instance, "node", new string[] { "--version" }, instance.Workspace, 10000);
+            Assert(node.ExitCode == 0 && !String.IsNullOrWhiteSpace(node.StandardOutput), "wsl adapter should run commands inside the configured distro");
+
+            RuntimeBridgeLaunch bridge = RuntimeBridgePatch.Create(instance, plugin);
+            RuntimeResolution runtime = adapter.Resolve(instance, plugin, instance.PreferredPort, bridge.PatchPath);
+            string outputLog = Path.Combine(AppPaths.LogDirectory, instance.Id + ".out.log");
+            string errorLog = Path.Combine(AppPaths.LogDirectory, instance.Id + ".err.log");
+            IRuntimeProcess process = adapter.Start(runtime, outputLog, errorLog);
+            try
+            {
+                Thread.Sleep(4000);
+                Assert(!process.HasExited, "wsl-launched DSH should remain running under wsl.exe");
+            }
+            finally
+            {
+                adapter.Kill(process);
+                process.WaitForExit(5000);
+                process.Dispose();
+                try { if (File.Exists(bridge.PatchPath)) File.Delete(bridge.PatchPath); } catch { }
+            }
         }
 
         private static string[] GetWslDistros()

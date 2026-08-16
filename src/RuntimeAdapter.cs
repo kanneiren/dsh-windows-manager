@@ -24,6 +24,7 @@ namespace DeepSeekHarnessManager
         IRuntimeProcess Start(RuntimeResolution runtime, string outputLog, string errorLog);
         ProcessIdentity CaptureIdentity(IRuntimeProcess process);
         void Kill(IRuntimeProcess process);
+        CommandResult RunCommand(InstanceConfig instance, string command, IList<string> arguments, string workingDirectory, int timeoutMilliseconds);
     }
 
     public sealed class WindowsRuntimeAdapter : IRuntimeAdapter
@@ -70,6 +71,11 @@ namespace DeepSeekHarnessManager
             catch
             {
             }
+        }
+
+        public CommandResult RunCommand(InstanceConfig instance, string command, IList<string> arguments, string workingDirectory, int timeoutMilliseconds)
+        {
+            return CommandRunner.RunCapture(command, arguments, workingDirectory, timeoutMilliseconds);
         }
     }
 

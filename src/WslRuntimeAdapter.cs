@@ -13,20 +13,39 @@ namespace DeepSeekHarnessManager
         public RuntimeResolution Resolve(InstanceConfig instance, PluginDefinition plugin, int port, string patchPath)
         {
             string distro = GetDistro(instance);
-            string wslWorkingDirectory = ConvertToWslPath(instance.Workspace);
-            string wslPatchPath = String.IsNullOrWhiteSpace(patchPath) ? String.Empty : ConvertToWslPath(patchPath);
-            string shell = BuildShellCommand(instance, plugin, port, wslPatchPath);
+            string kind = ResolveKind(instance);
+            string workingDirectory = instance.Workspace;
+            string launchCommand = "dsh";
+            string version = ResolveGlobalVersion(distro);
+
+            if (kind == "source")
+            {
+                if (String.IsNullOrWhiteSpace(instance.SourceRoot))
+                    throw new InvalidOperationException("WSL source runtime requires SourceRoot.");
+                workingDirectory = instance.SourceRoot;
+                launchCommand = "pnpm dsh";
+                version = ResolveSourceVersion(instance.SourceRoot);
+            }
+            else if (kind == "npx")
+            {
+                launchCommand = "npx --yes @deepseek-ai/dsh@" + (instance.PinnedVersion ?? String.Empty);
+                version = instance.PinnedVersion ?? String.Empty;
+            }
+
+            string wslWorkingDirectory = ConvertToWslPath(distro, workingDirectory);
+            string wslPatchPath = String.IsNullOrWhiteSpace(patchPath) ? String.Empty : ConvertToWslPath(distro, patchPath);
+            string shell = BuildShellCommand(launchCommand, instance.Profile ?? "web", port, wslPatchPath);
 
             RuntimeResolution resolution = new RuntimeResolution();
             resolution.Definition = new RuntimeDefinition
             {
-                Id = "wsl",
-                Label = "WSL " + distro,
-                Kind = "wsl",
-                WorkingDirectory = instance.Workspace
+                Id = "wsl-" + kind,
+                Label = "WSL " + distro + " " + kind,
+                Kind = kind,
+                WorkingDirectory = workingDirectory
             };
             resolution.CommandPath = FindWslExe();
-            resolution.WorkingDirectory = instance.Workspace;
+            resolution.WorkingDirectory = workingDirectory;
             resolution.Arguments = new List<string>();
             resolution.Arguments.Add("-d");
             resolution.Arguments.Add(distro);
@@ -36,8 +55,8 @@ namespace DeepSeekHarnessManager
             resolution.Arguments.Add("bash");
             resolution.Arguments.Add("-lic");
             resolution.Arguments.Add(shell);
-            resolution.Version = ResolveVersion(distro);
-            resolution.Description = "WSL " + distro + " (dsh via wsl.exe)";
+            resolution.Version = version;
+            resolution.Description = "WSL " + distro + " (" + kind + " via wsl.exe)";
             resolution.EnvironmentVariables = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             return resolution;
         }
@@ -114,27 +133,31 @@ namespace DeepSeekHarnessManager
             return "wsl.exe";
         }
 
-        private static string BuildShellCommand(InstanceConfig instance, PluginDefinition plugin, int port, string patchPath)
+        private static string BuildShellCommand(string launchCommand, string profile, int port, string patchPath)
         {
             StringBuilder command = new StringBuilder();
-            command.Append("exec dsh --profile ");
-            command.Append(BashQuote(instance.Profile ?? "web"));
-            command.Append(" --host 127.0.0.1 --port ");
-            command.Append(port.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            command.Append("exec ");
+            command.Append(launchCommand);
+            command.Append(" --profile ");
+            command.Append(BashQuote(profile));
             if (!String.IsNullOrWhiteSpace(patchPath))
             {
                 command.Append(" --patch ");
                 command.Append(BashQuote(patchPath));
             }
+            command.Append(" --host 127.0.0.1 --port ");
+            command.Append(port.ToString(System.Globalization.CultureInfo.InvariantCulture));
             return command.ToString();
         }
 
-        private static string ConvertToWslPath(string windowsPath)
+        public static string ConvertToWslPath(string distro, string windowsPath)
         {
             if (String.IsNullOrWhiteSpace(windowsPath)) return "~";
             try
             {
-                CommandResult result = CommandRunner.RunCapture(FindWslExe(), new string[] { "wslpath", "-u", windowsPath }, windowsPath, 5000);
+                string runDirectory = Directory.Exists(windowsPath) ? windowsPath : Path.GetDirectoryName(windowsPath);
+                if (String.IsNullOrWhiteSpace(runDirectory)) runDirectory = AppPaths.AppDirectory;
+                CommandResult result = CommandRunner.RunCapture(FindWslExe(), new string[] { "-d", distro, "--", "wslpath", "-u", windowsPath.Replace('\\', '/') }, runDirectory, 5000);
                 string converted = (result.StandardOutput ?? String.Empty).Trim();
                 if (!String.IsNullOrWhiteSpace(converted)) return converted;
             }
@@ -144,7 +167,7 @@ namespace DeepSeekHarnessManager
             return windowsPath.Replace('\\', '/');
         }
 
-        private static string ResolveVersion(string distro)
+        private static string ResolveGlobalVersion(string distro)
         {
             try
             {
@@ -158,6 +181,55 @@ namespace DeepSeekHarnessManager
                     if (newline >= 0) version = version.Substring(0, newline).Trim();
                     return version;
                 }
+            }
+            catch
+            {
+            }
+            return String.Empty;
+        }
+
+        public CommandResult RunCommand(InstanceConfig instance, string command, IList<string> arguments, string workingDirectory, int timeoutMilliseconds)
+        {
+            string distro = GetDistro(instance);
+            return RunCommand(distro, command, arguments, workingDirectory, timeoutMilliseconds);
+        }
+
+        public CommandResult RunCommand(string distro, string command, IList<string> arguments, string workingDirectory, int timeoutMilliseconds)
+        {
+            StringBuilder shell = new StringBuilder();
+            shell.Append(BashQuote(command));
+            if (arguments != null)
+            {
+                foreach (string argument in arguments) shell.Append(' ').Append(BashQuote(argument));
+            }
+            List<string> wslArgs = new List<string>();
+            wslArgs.Add("-d");
+            wslArgs.Add(distro);
+            wslArgs.Add("--cd");
+            wslArgs.Add(ConvertToWslPath(distro, workingDirectory));
+            wslArgs.Add("--");
+            wslArgs.Add("bash");
+            wslArgs.Add("-lic");
+            wslArgs.Add(shell.ToString());
+            return CommandRunner.RunCapture(FindWslExe(), wslArgs, workingDirectory, timeoutMilliseconds);
+        }
+
+        private static string ResolveKind(InstanceConfig instance)
+        {
+            string kind = String.IsNullOrWhiteSpace(instance.Runtime) ? "auto" : instance.Runtime.Trim().ToLowerInvariant();
+            if (kind == "auto") kind = "global";
+            return kind;
+        }
+
+        private static string ResolveSourceVersion(string sourceRoot)
+        {
+            try
+            {
+                string packagePath = Path.Combine(sourceRoot, "package.json");
+                if (!File.Exists(packagePath)) return String.Empty;
+                Dictionary<string, object> package = JsonStore.Deserialize<Dictionary<string, object>>(File.ReadAllText(packagePath, Encoding.UTF8));
+                object version;
+                if (package != null && package.TryGetValue("version", out version)) return Convert.ToString(version);
             }
             catch
             {
