@@ -196,6 +196,14 @@ namespace DeepSeekHarnessManager
         public string UpdatedAt { get; set; }
     }
 
+    public sealed class WslRunningInstance
+    {
+        public string Distro { get; set; }
+        public int Pid { get; set; }
+        public int Port { get; set; }
+        public string CommandLine { get; set; }
+    }
+
     public sealed class CommandResult
     {
         public int ExitCode { get; set; }

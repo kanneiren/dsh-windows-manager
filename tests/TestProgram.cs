@@ -902,6 +902,11 @@ namespace DeepSeekHarnessManager.Tests
             {
                 Thread.Sleep(4000);
                 Assert(!process.HasExited, "wsl-launched DSH should remain running under wsl.exe");
+                List<WslRunningInstance> detected = adapter.DetectRunning(distro);
+                bool found = false;
+                foreach (WslRunningInstance item in detected)
+                    if (item.Port == instance.PreferredPort) { found = true; break; }
+                Assert(found, "wsl detector should find the launched DSH port");
             }
             finally
             {

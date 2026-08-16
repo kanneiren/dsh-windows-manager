@@ -194,6 +194,39 @@ namespace DeepSeekHarnessManager
             return String.Empty;
         }
 
+        public List<WslRunningInstance> DetectRunning(string distro)
+        {
+            List<WslRunningInstance> result = new List<WslRunningInstance>();
+            if (String.IsNullOrWhiteSpace(distro)) return result;
+            string scriptPath = Path.Combine(AppPaths.RuntimeDirectory, "wsl-detect-dsh.cjs");
+            File.WriteAllText(scriptPath, WslDetectScript, new UTF8Encoding(false));
+            string wslScriptPath = ConvertToWslPath(distro, scriptPath);
+            CommandResult command = RunCommand(distro, "node", new string[] { wslScriptPath }, Path.GetDirectoryName(scriptPath), 15000);
+            if (command.ExitCode != 0) return result;
+            string[] lines = (command.StandardOutput ?? String.Empty).Split(new char[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (string line in lines)
+            {
+                try
+                {
+                    Dictionary<string, object> item = JsonStore.Deserialize<Dictionary<string, object>>(line);
+                    if (item == null) continue;
+                    int pid = BridgeProtocol.GetInt(item, "pid");
+                    int port = BridgeProtocol.GetInt(item, "port");
+                    if (pid <= 0 || port <= 0) continue;
+                    WslRunningInstance running = new WslRunningInstance();
+                    running.Distro = distro.Trim();
+                    running.Pid = pid;
+                    running.Port = port;
+                    running.CommandLine = BridgeProtocol.GetString(item, "command");
+                    result.Add(running);
+                }
+                catch
+                {
+                }
+            }
+            return result;
+        }
+
         public CommandResult RunCommand(InstanceConfig instance, string command, IList<string> arguments, string workingDirectory, int timeoutMilliseconds)
         {
             string distro = GetDistro(instance);
@@ -275,5 +308,53 @@ namespace DeepSeekHarnessManager
         {
             return "'" + (value ?? String.Empty).Replace("'", "'\\''") + "'";
         }
+
+        private const string WslDetectScript = @"const fs = require('fs');
+function parsePort(hex) { return parseInt(hex, 16); }
+function scanTable(file, listeners) {
+  let text = '';
+  try { text = fs.readFileSync(file, 'utf8'); } catch (_) { return; }
+  const lines = text.split(/\r?\n/);
+  for (let i = 1; i < lines.length; i += 1) {
+    const columns = lines[i].trim().split(/\s+/);
+    if (columns.length < 10) continue;
+    const local = columns[1] || '';
+    const state = columns[3] || '';
+    const inode = columns[9] || '';
+    if (state !== '0A') continue;
+    const portHex = local.split(':').pop() || '0';
+    const port = parsePort(portHex);
+    if (port > 0 && port <= 65535) listeners[inode] = port;
+  }
+}
+function socketInodes(pid) {
+  const found = new Set();
+  let fdDir;
+  try { fdDir = fs.readdirSync('/proc/' + pid + '/fd'); } catch (_) { return found; }
+  for (const fd of fdDir) {
+    try {
+      const target = fs.readlinkSync('/proc/' + pid + '/fd/' + fd);
+      const match = /^socket:\[(\d+)\]$/.exec(target);
+      if (match) found.add(match[1]);
+    } catch (_) { }
+  }
+  return found;
+}
+const listeners = {};
+scanTable('/proc/net/tcp', listeners);
+scanTable('/proc/net/tcp6', listeners);
+const pids = fs.readdirSync('/proc').filter((value) => /^\d+$/.test(value));
+for (const pid of pids) {
+  let command = '';
+  try { command = fs.readFileSync('/proc/' + pid + '/cmdline', 'utf8').replace(/\0/g, ' ').trim(); } catch (_) { continue; }
+  if (!/dsh/.test(command)) continue;
+  const inodes = socketInodes(pid);
+  for (const inode of inodes) {
+    if (Object.prototype.hasOwnProperty.call(listeners, inode)) {
+      process.stdout.write(JSON.stringify({ pid: Number(pid), port: listeners[inode], command }) + '\n');
+    }
+  }
+}
+";
     }
 }
