@@ -58,8 +58,8 @@ namespace DeepSeekHarnessManager
             try
             {
                 HashSet<string> collected = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                foreach (string match in Directory.GetFiles(AppPaths.LogDirectory, "*.out.log")) collected.Add(match);
-                foreach (string match in Directory.GetFiles(AppPaths.LogDirectory, "*.err.log")) collected.Add(match);
+                foreach (string match in Directory.GetFiles(AppPaths.LogDirectory, "*.out.log", SearchOption.AllDirectories)) collected.Add(match);
+                foreach (string match in Directory.GetFiles(AppPaths.LogDirectory, "*.err.log", SearchOption.AllDirectories)) collected.Add(match);
                 files = new string[collected.Count];
                 collected.CopyTo(files);
             }

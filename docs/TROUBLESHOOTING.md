@@ -62,11 +62,19 @@ Do not terminate the owner based only on its name. The manager's conflict dialog
 
 ## 5. Read the Logs
 
-Use `Open logs` from the tray menu. Manager-launched instances create timestamped `.out.log` and `.err.log` files under:
+Use `Open logs` from the tray menu. Manager-launched Windows instances create timestamped `.out.log` and `.err.log` files under:
 
 ```text
 %LOCALAPPDATA%\DeepSeekHarnessManager\logs
 ```
+
+Manager-launched WSL instances create the same files under:
+
+```text
+%LOCALAPPDATA%\DeepSeekHarnessManager\logs\wsl\<instance-id>
+```
+
+The tray `Open DSH logs` action follows the selected instance and opens the matching directory.
 
 The manager itself writes `manager.log`. Common causes include an unavailable runtime command, npm registry failure, invalid source checkout, workspace access failure, port binding failure, a DSH startup exception, or an upstream CLI/API change.
 

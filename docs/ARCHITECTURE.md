@@ -40,6 +40,7 @@ Mutable data is stored separately:
 %LOCALAPPDATA%\DeepSeekHarnessManager
   config.json
   logs\
+    wsl\<instance-id>\   ← Manager-launched WSL DSH stdout/stderr
   state\
   runtime\
   updates\

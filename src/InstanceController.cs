@@ -374,9 +374,12 @@ namespace DeepSeekHarnessManager
                 IRuntimeAdapter adapter = RuntimeAdapters.Get(Config);
                 RuntimeResolution runtime = adapter.Resolve(Config, Plugin, port, patchPath);
                 string timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
-                string runtimeDirectory = AppPaths.InstanceRuntimeDirectory(Config.Id);
-                string outputLog = Path.Combine(AppPaths.LogDirectory, Config.Id + "-" + timestamp + ".out.log");
-                string errorLog = Path.Combine(AppPaths.LogDirectory, Config.Id + "-" + timestamp + ".err.log");
+                string logDirectory = AppPaths.LogDirectory;
+                if (String.Equals(Config.RuntimeType, InstanceModel.RuntimeTypeWsl, StringComparison.OrdinalIgnoreCase))
+                    logDirectory = Path.Combine(AppPaths.LogDirectory, "wsl", AppPaths.SafeFileName(Config.Id));
+                Directory.CreateDirectory(logDirectory);
+                string outputLog = Path.Combine(logDirectory, Config.Id + "-" + timestamp + ".out.log");
+                string errorLog = Path.Combine(logDirectory, Config.Id + "-" + timestamp + ".err.log");
                 FileLog.Info("Starting " + Config.Id + " with " + runtime.Description + " on port " + port);
                 activeAdapter = adapter;
                 launchProcess = adapter.Start(runtime, outputLog, errorLog);

@@ -146,7 +146,7 @@ namespace DeepSeekHarnessManager
             openManagerLogs.Click += delegate { manager.OpenManagerLogs(); };
             menu.Items.Add(openManagerLogs);
             ToolStripMenuItem openDshLogs = new ToolStripMenuItem(Localization.Text("Menu.OpenDshLogs"));
-            openDshLogs.Click += delegate { manager.OpenDshLogs(); };
+            openDshLogs.Click += delegate { manager.OpenDshLogs(selectedInstanceId); };
             menu.Items.Add(openDshLogs);
             ToolStripMenuItem language = new ToolStripMenuItem(Localization.Text("Menu.Language"));
             ToolStripMenuItem autoLanguage = new ToolStripMenuItem(Localization.Text("Language.Auto"));

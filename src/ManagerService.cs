@@ -90,7 +90,7 @@ namespace DeepSeekHarnessManager
         void SaveDetectedInstance(string instanceId);
         void OpenConfiguration();
         void OpenManagerLogs();
-        void OpenDshLogs();
+        void OpenDshLogs(string instanceId);
         void OpenLogs();
         void OpenInstanceWorkspace(string instanceId);
         void OpenDshSettings(string instanceId);
@@ -552,8 +552,15 @@ namespace DeepSeekHarnessManager
             OpenFile(AppPaths.ManagerLog);
         }
 
-        public void OpenDshLogs()
+        public void OpenDshLogs(string instanceId)
         {
+            InstanceController controller = GetController(instanceId);
+            if (String.Equals(controller.Config.RuntimeType, InstanceModel.RuntimeTypeWsl, StringComparison.OrdinalIgnoreCase))
+            {
+                string wslLogs = Path.Combine(AppPaths.LogDirectory, "wsl", AppPaths.SafeFileName(controller.Config.Id));
+                OpenFolder(wslLogs);
+                return;
+            }
             OpenFolder(AppPaths.LogDirectory);
         }
 

@@ -739,6 +739,15 @@ namespace DeepSeekHarnessManager.Tests
             File.SetLastWriteTimeUtc(multiOut, expiredUtc);
             File.SetLastWriteTimeUtc(multiErr, expiredUtc);
 
+            string wslLogDirectory = Path.Combine(logDirectory, "wsl", "wsl-web");
+            Directory.CreateDirectory(wslLogDirectory);
+            string wslOut = Path.Combine(wslLogDirectory, "wsl-web-" + expiredUtc.ToString("yyyyMMdd-HHmmss") + ".out.log");
+            string wslErr = Path.Combine(wslLogDirectory, "wsl-web-" + expiredUtc.ToString("yyyyMMdd-HHmmss") + ".err.log");
+            File.WriteAllText(wslOut, "old" + Environment.NewLine);
+            File.WriteAllText(wslErr, "old" + Environment.NewLine);
+            File.SetLastWriteTimeUtc(wslOut, expiredUtc);
+            File.SetLastWriteTimeUtc(wslErr, expiredUtc);
+
             byte[] filler = new byte[4096];
             using (FileStream stream = File.Create(AppPaths.ManagerLog))
             {
@@ -751,6 +760,7 @@ namespace DeepSeekHarnessManager.Tests
             Assert(File.Exists(AppPaths.ManagerLog + ".1"), "manager.log was not rolled over");
             Assert(!File.Exists(expiredOut) && !File.Exists(expiredErr), "expired instance logs were not removed");
             Assert(!File.Exists(multiOut) && !File.Exists(multiErr), "expired non-web instance logs were not removed");
+            Assert(!File.Exists(wslOut) && !File.Exists(wslErr), "expired WSL instance logs were not removed");
             string[] remaining = Directory.GetFiles(logDirectory, "web-*.log");
             Assert(remaining.Length <= FileLog.MaxInstanceLogPairs * 2, "instance log count exceeded the retention bound");
         }
