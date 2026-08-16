@@ -37,7 +37,7 @@ Only the current Windows user can read and write it. It listens on no TCP endpoi
 
 ## WSL Adaptation Security Boundary
 
-Future WSL2 support follows these boundaries: run only an internal command allowlist inside the user-selected distro; use the `wsl.exe` process as the liveness handle and accept Linux PIDs only from the in-WSL Runtime Bridge, never from WMI guessing; use loopback TCP with the same 256-bit token as the Windows named pipe and never expose the bridge to the LAN; stop through bridge `shutdown` by default, never `wsl.exe --terminate <distro>`.
+Future WSL2 support follows these boundaries: the Manager runs only on Windows and installs no Manager/daemon inside WSL; the only WSL-side components are DSH and its generated Runtime Bridge `--patch`. Run only an internal command allowlist inside the user-selected distro; use the `wsl.exe` process as the liveness handle and accept Linux PIDs only from the in-WSL Runtime Bridge, never from WMI guessing; use loopback TCP with the same 256-bit token as the Windows named pipe and never expose the bridge to the LAN; stop through bridge `shutdown` by default, never `wsl.exe --terminate <distro>`.
 
 ## Graceful Shutdown and IPC
 

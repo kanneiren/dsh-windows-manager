@@ -23,6 +23,7 @@ Do not describe the manager package as the DSH runtime. They are separate packag
 ## Required Invariants
 
 - Backward compatibility is not a goal for now: prefer removing legacy fallback paths over preserving them. The project remains open source and usable by multiple users, so current-version correctness, security, and multi-instance behavior must not be weakened.
+- WSL support targets WSL2 first. Never install or run Manager software inside WSL: the only WSL-side components are DSH and its generated Runtime Bridge `--patch`. Drive all management from the Windows Manager through `wsl.exe`.
 - WSL support targets WSL2 first. Never assume a fixed distro such as Ubuntu: discover with `wsl.exe --list --quiet` and persist the user-selected `WslDistro`. Never guess Linux PIDs through WMI; use `wsl.exe` as the process handle and the Runtime Bridge as the authoritative PID/state source.
 - Keep Runtime Bridge protocol independent of transport: Windows uses named pipe, WSL uses loopback TCP with the same 256-bit token. Never expose the WSL bridge beyond loopback.
 - WSL lifecycle commands run only inside the configured distro and remain an internal allowlist; `wsl.exe --terminate <distro>` is not an acceptable default stop action.

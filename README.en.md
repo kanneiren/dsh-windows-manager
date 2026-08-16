@@ -128,7 +128,7 @@ While the Manager is running, CLI `status` / `open` / `start` / `stop` / `restar
 
 Setting `TrayEnabled` to `false` in `config.json` runs the same `DeepSeekHarnessManager.exe` without a tray icon: Manager Core, Supervisor, Runtime Bridge, and Manager Control API continue running and remain controllable through the CLI.
 
-`RuntimeType` is reserved for WSL support. The planned `WslRuntimeAdapter` targets WSL2: `wsl.exe` provides the process handle, the in-WSL Runtime Bridge provides authoritative PID/state, and transport is loopback TCP with the same 256-bit token. Linux PIDs are never guessed through WMI. Only `WindowsRuntimeAdapter` is implemented today; selecting `wsl` reports an explicit adapter-not-implemented error instead of falling back to the Windows launch path.
+`RuntimeType` is reserved for WSL support. The planned `WslRuntimeAdapter` targets WSL2: the Manager runs only on Windows and installs no Manager/daemon inside WSL. The only WSL-side components are DSH and its per-launch Runtime Bridge `--patch`. `wsl.exe` provides the process handle, the in-WSL Runtime Bridge provides authoritative PID/state, and transport is loopback TCP with the same 256-bit token. Linux PIDs are never guessed through WMI. Only `WindowsRuntimeAdapter` is implemented today; selecting `wsl` reports an explicit adapter-not-implemented error instead of falling back to the Windows launch path.
 
 
 

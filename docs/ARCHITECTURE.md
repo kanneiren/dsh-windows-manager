@@ -139,7 +139,7 @@ Future WSL     → loopback + strong authentication token (to be evaluated)
 
 ## WSL Adaptation Plan
 
-Target: Windows Manager manages a DSH process inside WSL2. WSL1 and Linux-native management are out of scope for the first implementation.
+Target: Windows Manager manages a DSH process inside WSL2. No Manager binary, daemon, service, or supervisor is installed or run inside WSL; the only WSL-side component is the DSH process itself plus the generated DSH Runtime Bridge `--patch`. All management commands originate from `DeepSeekHarnessManager.exe` on Windows through `wsl.exe`. WSL1 and Linux-native management are out of scope for the first implementation.
 
 Discovery and launch are on demand only, never steady polling:
 
