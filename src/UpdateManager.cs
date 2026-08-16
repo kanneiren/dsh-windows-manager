@@ -52,7 +52,7 @@ namespace DeepSeekHarnessManager
 
         public Task<UpdateInfo> CheckAsync(InstanceController controller, bool force)
         {
-            return Task.Factory.StartNew(delegate { return Check(controller, force); });
+            return Task.Run(delegate { return Check(controller, force); });
         }
 
         public static DateTime NextAutomaticCheckUtc(DateTime lastAttemptUtc)
@@ -93,7 +93,7 @@ namespace DeepSeekHarnessManager
             if (wasRunning && !controller.Stop(false)) return false;
 
             controller.SetUpdating(true, "Updating to " + info.LatestVersion);
-            Task<UpdateOutcome> task = Task.Factory.StartNew(delegate { return ExecuteTransaction(runtime, controller, info.LatestVersion); });
+            Task<UpdateOutcome> task = Task.Run(delegate { return ExecuteTransaction(runtime, controller, info.LatestVersion); });
             UpdateOutcome outcome = interaction.WaitForUpdate(Localization.Text("Update.ProgressTitle"), task);
             if (outcome == null) outcome = new UpdateOutcome { Error = Localization.Text("Update.Incomplete") };
             WriteFinalCache(controller, runtime, info.LatestVersion, outcome);

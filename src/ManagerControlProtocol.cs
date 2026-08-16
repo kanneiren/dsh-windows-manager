@@ -93,7 +93,7 @@ namespace DeepSeekHarnessManager
                     pipe.Write(requestBytes, 0, requestBytes.Length);
                     pipe.Flush();
 
-                    Task<string> readTask = Task.Factory.StartNew(delegate
+                    Task<string> readTask = Task.Run(delegate
                     {
                         using (StreamReader reader = new StreamReader(pipe, Encoding.UTF8, false, 4096, true)) return reader.ReadLine();
                     });

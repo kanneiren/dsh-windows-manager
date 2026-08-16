@@ -180,8 +180,6 @@ namespace DeepSeekHarnessManager
     {
         public int Port { get; set; }
         public int ProcessId { get; set; }
-        public string ProcessImagePath { get; set; }
-        public string ProcessStartTimeUtc { get; set; }
         public string StartedAtUtc { get; set; }
         public string Ownership { get; set; }
         public string RuntimeId { get; set; }
@@ -280,8 +278,6 @@ namespace DeepSeekHarnessManager
     public sealed class ManagedProcess : IRuntimeProcess
     {
         public Process RootProcess { get; set; }
-        public string OutputLog { get; set; }
-        public string ErrorLog { get; set; }
         public event EventHandler Exited;
         public bool ExitObserved { get; private set; }
 

@@ -155,8 +155,6 @@ namespace DeepSeekHarnessManager
             process.EnableRaisingEvents = true;
             ManagedProcess managed = new ManagedProcess();
             managed.RootProcess = process;
-            managed.OutputLog = outputLog;
-            managed.ErrorLog = errorLog;
             process.Exited += delegate(object sender, EventArgs args) { managed.SignalExit(); };
             process.OutputDataReceived += delegate(object sender, DataReceivedEventArgs args) { AppendLine(outputLog, args.Data); };
             process.ErrorDataReceived += delegate(object sender, DataReceivedEventArgs args) { AppendLine(errorLog, args.Data); };
@@ -173,8 +171,8 @@ namespace DeepSeekHarnessManager
             {
                 process.StartInfo = info;
                 if (!process.Start()) throw new InvalidOperationException("Command did not start: " + command);
-                Task<string> outputTask = Task.Factory.StartNew(delegate { return process.StandardOutput.ReadToEnd(); });
-                Task<string> errorTask = Task.Factory.StartNew(delegate { return process.StandardError.ReadToEnd(); });
+                Task<string> outputTask = Task.Run(delegate { return process.StandardOutput.ReadToEnd(); });
+                Task<string> errorTask = Task.Run(delegate { return process.StandardError.ReadToEnd(); });
                 bool exited = process.WaitForExit(timeoutMilliseconds);
                 if (!exited)
                 {

@@ -624,30 +624,7 @@ namespace DeepSeekHarnessManager
 
         private bool TestHttp(int port)
         {
-            try
-            {
-                TokenContext context = RuntimeResolver.CreateContext(Config, Plugin, port, String.Empty);
-                string url = AppPaths.Expand(Plugin.Probe.UrlTemplate, context);
-                HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
-                request.Proxy = null;
-                request.Timeout = 1200;
-                request.ReadWriteTimeout = 1200;
-                request.Method = "GET";
-                request.UserAgent = "DeepSeekHarnessManager/1.0";
-                using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
-                using (StreamReader reader = new StreamReader(response.GetResponseStream(), Encoding.UTF8))
-                {
-                    if ((int)response.StatusCode != 200) return false;
-                    string content = reader.ReadToEnd();
-                    foreach (string marker in Plugin.Probe.Markers)
-                        if (content.IndexOf(marker, StringComparison.Ordinal) < 0) return false;
-                    return true;
-                }
-            }
-            catch
-            {
-                return false;
-            }
+            return RuntimeHttpProbe.Verify(Config, Plugin, port, 1200);
         }
 
         private void CompleteStart(PortInspection inspection)
@@ -786,8 +763,6 @@ namespace DeepSeekHarnessManager
             ApplyInspectionOwnership(inspection);
             persistedState.Port = inspection.Port;
             persistedState.ProcessId = inspection.ProcessId;
-            persistedState.ProcessImagePath = inspection.Process == null ? String.Empty : inspection.Process.ImagePath;
-            persistedState.ProcessStartTimeUtc = inspection.Process != null && inspection.Process.StartTimeUtc.HasValue ? inspection.Process.StartTimeUtc.Value.ToString("o") : String.Empty;
             persistedState.StartedAtUtc = startedAtUtc.HasValue ? startedAtUtc.Value.ToString("o") : String.Empty;
             persistedState.Ownership = InstanceModel.ToText(ownership);
             persistedState.PipeName = bridgeLaunch == null ? persistedState.PipeName : bridgeLaunch.PipeName;

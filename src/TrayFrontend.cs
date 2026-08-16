@@ -619,7 +619,6 @@ namespace DeepSeekHarnessManager
 
         private sealed class InstanceMenuBinding
         {
-            public ToolStripMenuItem Status;
             public ToolStripMenuItem Version;
             public ToolStripMenuItem Open;
             public ToolStripMenuItem Start;

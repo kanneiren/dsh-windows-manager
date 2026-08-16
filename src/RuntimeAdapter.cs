@@ -95,10 +95,21 @@ namespace DeepSeekHarnessManager
                     catch { }
                 }
             }
+            Dictionary<int, List<int>> portsByPid = new Dictionary<int, List<int>>();
             foreach (PortOwner owner in PortMap.GetAllListenerOwners())
             {
                 if (owner.Port <= 0 || owner.ProcessId <= 0) continue;
-                ProcessIdentity identity = ProcessInspector.Get(owner.ProcessId, false);
+                List<int> ports;
+                if (!portsByPid.TryGetValue(owner.ProcessId, out ports))
+                {
+                    ports = new List<int>();
+                    portsByPid[owner.ProcessId] = ports;
+                }
+                ports.Add(owner.Port);
+            }
+            foreach (KeyValuePair<int, List<int>> entry in portsByPid)
+            {
+                ProcessIdentity identity = ProcessInspector.Get(entry.Key, false);
                 bool processMatch = false;
                 foreach (Regex pattern in patterns)
                 {
@@ -109,46 +120,24 @@ namespace DeepSeekHarnessManager
                     }
                 }
                 if (!processMatch) continue;
-                if (!VerifyHttp(plugin, owner.Port)) continue;
-                WindowsRunningInstance running = new WindowsRunningInstance();
-                running.Pid = owner.ProcessId;
-                running.Port = owner.Port;
-                running.CommandLine = identity.CommandLine;
-                running.ImagePath = identity.ImagePath;
-                running.StartTimeUtc = identity.StartTimeUtc;
-                result.Add(running);
+                foreach (int candidatePort in entry.Value)
+                {
+                    if (!VerifyHttp(plugin, candidatePort)) continue;
+                    WindowsRunningInstance running = new WindowsRunningInstance();
+                    running.Pid = entry.Key;
+                    running.Port = candidatePort;
+                    running.CommandLine = identity.CommandLine;
+                    running.ImagePath = identity.ImagePath;
+                    running.StartTimeUtc = identity.StartTimeUtc;
+                    result.Add(running);
+                }
             }
             return result;
         }
 
         private static bool VerifyHttp(PluginDefinition plugin, int port)
         {
-            try
-            {
-                InstanceConfig probe = new InstanceConfig();
-                probe.Profile = "web";
-                TokenContext context = RuntimeResolver.CreateContext(probe, plugin, port, String.Empty);
-                string url = AppPaths.Expand(plugin.Probe.UrlTemplate, context);
-                HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
-                request.Proxy = null;
-                request.Timeout = 1200;
-                request.ReadWriteTimeout = 1200;
-                request.Method = "GET";
-                request.UserAgent = "DeepSeekHarnessManager/1.0";
-                using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
-                using (StreamReader reader = new StreamReader(response.GetResponseStream(), Encoding.UTF8))
-                {
-                    if ((int)response.StatusCode != 200) return false;
-                    string content = reader.ReadToEnd();
-                    foreach (string marker in plugin.Probe.Markers)
-                        if (content.IndexOf(marker, StringComparison.Ordinal) < 0) return false;
-                    return true;
-                }
-            }
-            catch
-            {
-                return false;
-            }
+            return RuntimeHttpProbe.Verify(null, plugin, port, 1200);
         }
     }
 
