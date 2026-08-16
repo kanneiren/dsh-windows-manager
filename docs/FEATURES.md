@@ -14,7 +14,7 @@
 | Discovery | Authoritative DSH IPC status/events when the bridge is connected; combined HTTP content and process-command fingerprints remain as fallback |
 | Ports | Configurable preferred port, bounded fallback selection, conflict details |
 | Frontends | `web` opens the local Web UI; `oh-dsh` and `custom` are reserved and fail explicitly instead of falling back to web |
-| Runtime adapter | `IRuntimeAdapter` boundary with a Windows implementation; `wsl` is reserved and reports that its adapter is not implemented yet |
+| Runtime adapter | `IRuntimeAdapter` boundary with a Windows implementation; WSL2 is planned as `WslRuntimeAdapter` with bridge-first state and loopback TCP transport |
 | Multi-instance | Independent menu, status, port, workspace, runtime, and optional DSH home |
 | Configuration | Separate menu actions for manager `config.json` and each instance's DSH settings directory |
 | Shutdown | Authenticated versioned DSH IPC bridge (`ping`/`getStatus`/`getRuntimeInfo`/`shutdown`) and guarded manual termination fallback |

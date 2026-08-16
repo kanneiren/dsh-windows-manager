@@ -35,6 +35,10 @@ The Manager exposes a separate local named pipe for the CLI and third-party fron
 
 Only the current Windows user can read and write it. It listens on no TCP endpoint and is not reachable from the local network or internet. Protocol v1 contains only `getVersion`, `getStatus`, `listInstances`, `start`, `stop`, `restart`, `open`, and `exit`, and every response carries `protocolVersion`. It offers no arbitrary command execution, PowerShell, npm proxy, or arbitrary file read/write. It accepts one JSON object per line with a 64 KiB input limit.
 
+## WSL Adaptation Security Boundary
+
+Future WSL2 support follows these boundaries: run only an internal command allowlist inside the user-selected distro; use the `wsl.exe` process as the liveness handle and accept Linux PIDs only from the in-WSL Runtime Bridge, never from WMI guessing; use loopback TCP with the same 256-bit token as the Windows named pipe and never expose the bridge to the LAN; stop through bridge `shutdown` by default, never `wsl.exe --terminate <distro>`.
+
 ## Graceful Shutdown and IPC
 
 Each manager-launched DSH instance receives a unique named-pipe name and a random 256-bit hexadecimal token through a generated local patch. The pipe accepts only authenticated `ping`, `getStatus`, `getRuntimeInfo`, and `shutdown` commands; the DSH-side plugin verifies the token before calling `ctx.appExit(0)`.

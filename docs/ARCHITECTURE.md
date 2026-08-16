@@ -137,6 +137,48 @@ Windows Native → named pipe
 Future WSL     → loopback + strong authentication token (to be evaluated)
 ```
 
+## WSL Adaptation Plan
+
+Target: Windows Manager manages a DSH process inside WSL2. WSL1 and Linux-native management are out of scope for the first implementation.
+
+Discovery and launch are on demand only, never steady polling:
+
+```text
+wsl.exe --list --quiet                 → distro list
+wsl.exe -d <distro> -- bash -lic ...   → DSH detection / PATH / nvm setup
+wsl.exe -d <distro> --cd <dir> -- bash -lic 'exec dsh ...' → launch
+```
+
+The WSL adapter keeps `exec` semantics so the Windows `wsl.exe` process lifetime mirrors DSH. The Windows `wsl.exe` process is the liveness handle; authoritative PID, port, version, and state come from the Runtime Bridge inside WSL. Linux PIDs are never guessed through WMI.
+
+Transport:
+
+```text
+Windows Native → named pipe
+WSL2           → loopback TCP + the same 256-bit launch token
+```
+
+The newline-delimited Runtime Bridge protocol stays unchanged. The Manager reserves/validates a loopback port on the Windows side, passes it through the generated per-launch patch, and revalidates bridge-reported PID/port before trusting it. DSH remains bound to loopback/localhost only; no LAN exposure.
+
+Lifecycle:
+
+```text
+stop       → versioned bridge shutdown
+fallback   → verified kill of the recorded Linux PID via wsl.exe
+never      → default wsl.exe --terminate <distro> (too broad)
+```
+
+Externally started WSL DSH is adopted as `attached` and gains full lifecycle control only after authenticating through the Runtime Bridge.
+
+Config additions planned:
+
+```text
+RuntimeType = wsl
+WslDistro   = Ubuntu-24.04
+```
+
+Workspace path conversion uses `wsl.exe wslpath`. Diagnostics report `runtimeType=wsl`, the Linux DSH PID from the bridge, and the Windows `wsl.exe` handle PID.
+
 ## Frontend Launch
 
 `FrontendLauncher` resolves the configured instance `Frontend`:
