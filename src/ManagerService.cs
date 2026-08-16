@@ -64,6 +64,7 @@ namespace DeepSeekHarnessManager
     {
         event EventHandler Changed;
         event EventHandler ExitRequested;
+        int ChangeVersion { get; }
 
         ManagerSnapshot GetSnapshot();
         void TickInstances();
@@ -110,6 +111,7 @@ namespace DeepSeekHarnessManager
         private readonly HashSet<string> updateChecksInFlight;
         private readonly HashSet<string> detectedInstanceIds;
         private readonly object updateSync = new object();
+        private int changeVersion;
         private bool disposed;
 
         public ManagerService(ManagerConfig managerConfig, PluginCatalog pluginCatalog, ConfigurationStore store, IManagerInteraction managerInteraction)
@@ -136,6 +138,7 @@ namespace DeepSeekHarnessManager
 
         public event EventHandler Changed;
         public event EventHandler ExitRequested;
+        public int ChangeVersion { get { return changeVersion; } }
 
         public ManagerSnapshot GetSnapshot()
         {
@@ -710,6 +713,7 @@ namespace DeepSeekHarnessManager
 
         private void RaiseChanged()
         {
+            changeVersion++;
             EventHandler handler = Changed;
             if (handler != null) handler(this, EventArgs.Empty);
         }

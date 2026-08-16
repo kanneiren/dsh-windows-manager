@@ -20,6 +20,7 @@ namespace DeepSeekHarnessManager
         private bool initialActionHandled;
         private bool exitRequested;
         private string selectedInstanceId;
+        private int lastUiChangeVersion = -1;
         private string lastUiSignature;
         private string lastMenuSignature;
         private ToolStripMenuItem instanceSelector;
@@ -398,6 +399,7 @@ namespace DeepSeekHarnessManager
             {
                 manager.Tick();
                 if (exitRequested) return;
+                if (manager.ChangeVersion == lastUiChangeVersion) return;
                 RefreshUi();
             }
             catch (Exception exception)
@@ -471,6 +473,7 @@ namespace DeepSeekHarnessManager
 
         private void RefreshUi()
         {
+            lastUiChangeVersion = manager.ChangeVersion;
             ManagerSnapshot snapshot = manager.GetSnapshot();
             string signature = BuildUiSignature(snapshot);
             if (String.Equals(signature, lastUiSignature, StringComparison.Ordinal)) return;
@@ -502,24 +505,23 @@ namespace DeepSeekHarnessManager
 
         private string BuildUiSignature(ManagerSnapshot snapshot)
         {
-            List<string> values = new List<string>();
-            values.Add(Localization.CurrentLanguage ?? String.Empty);
-            values.Add(selectedInstanceId ?? String.Empty);
+            System.Text.StringBuilder values = new System.Text.StringBuilder();
+            values.Append(Localization.CurrentLanguage ?? String.Empty);
+            values.Append('|').Append(selectedInstanceId ?? String.Empty);
             foreach (InstanceSnapshot instance in snapshot.Instances)
             {
-                values.Add(instance.IsDetected ? "1" : "0");
-
-                values.Add(instance.Id);
-                values.Add(instance.State.ToString());
-                values.Add(instance.ActivePort.ToString());
-                values.Add(instance.InstalledVersion ?? String.Empty);
-                values.Add(instance.IpcBridgeConnected ? "1" : "0");
-                values.Add(instance.BridgeState ?? String.Empty);
-                values.Add(instance.LatestVersion ?? String.Empty);
-                values.Add(instance.UpdateAvailable ? "1" : "0");
-                values.Add(instance.UpdateCheckInProgress ? "1" : "0");
+                values.Append('|').Append(instance.IsDetected ? "1" : "0");
+                values.Append('|').Append(instance.Id);
+                values.Append('|').Append(instance.State.ToString());
+                values.Append('|').Append(instance.ActivePort.ToString());
+                values.Append('|').Append(instance.InstalledVersion ?? String.Empty);
+                values.Append('|').Append(instance.IpcBridgeConnected ? "1" : "0");
+                values.Append('|').Append(instance.BridgeState ?? String.Empty);
+                values.Append('|').Append(instance.LatestVersion ?? String.Empty);
+                values.Append('|').Append(instance.UpdateAvailable ? "1" : "0");
+                values.Append('|').Append(instance.UpdateCheckInProgress ? "1" : "0");
             }
-            return String.Join("|", values.ToArray());
+            return values.ToString();
         }
 
         private string BuildMenuSignature(ManagerSnapshot snapshot)

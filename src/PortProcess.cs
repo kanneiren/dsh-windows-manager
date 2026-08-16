@@ -20,8 +20,10 @@ namespace DeepSeekHarnessManager
 
         public static IList<int> GetListenerProcessIds(int port)
         {
-            Dictionary<int, int> owners = ReadOwners(port);
-            return new List<int>(owners.Values);
+            HashSet<int> processIds = new HashSet<int>();
+            ReadTable(AfInet, port, processIds);
+            ReadTable(AfInet6, port, processIds);
+            return new List<int>(processIds);
         }
 
         public static IList<PortOwner> GetAllListenerOwners()
@@ -46,6 +48,54 @@ namespace DeepSeekHarnessManager
             ReadTable(AfInet, targetPort, owners);
             ReadTable(AfInet6, targetPort, owners);
             return owners;
+        }
+
+        private static void ReadTable(int addressFamily, int targetPort, HashSet<int> processIds)
+        {
+            int size = 0;
+            uint status = GetExtendedTcpTable(IntPtr.Zero, ref size, false, addressFamily, TcpTableOwnerPidListener, 0);
+            if (status != ErrorInsufficientBuffer && status != 0) return;
+            IntPtr buffer = IntPtr.Zero;
+            try
+            {
+                int attempts;
+                for (attempts = 0; attempts < 3; attempts++)
+                {
+                    if (buffer != IntPtr.Zero) Marshal.FreeHGlobal(buffer);
+                    buffer = Marshal.AllocHGlobal(size);
+                    status = GetExtendedTcpTable(buffer, ref size, false, addressFamily, TcpTableOwnerPidListener, 0);
+                    if (status == 0) break;
+                    if (status != ErrorInsufficientBuffer) return;
+                }
+                if (status != 0) return;
+                int count = Marshal.ReadInt32(buffer, 0);
+                int rowSize = addressFamily == AfInet ? 24 : 56;
+                int stateOffset = addressFamily == AfInet ? 0 : 48;
+                int portOffset = addressFamily == AfInet ? 8 : 20;
+                int processOffset = addressFamily == AfInet ? 20 : 52;
+                long firstRow = buffer.ToInt64() + 4;
+                int i;
+                for (i = 0; i < count; i++)
+                {
+                    IntPtr row = new IntPtr(firstRow + (long)i * rowSize);
+                    int state = Marshal.ReadInt32(row, stateOffset);
+                    if (state != 2) continue;
+                    int rawPort = Marshal.ReadInt32(row, portOffset);
+                    byte[] bytes = BitConverter.GetBytes(rawPort);
+                    int localPort = (bytes[0] << 8) + bytes[1];
+                    if (localPort != targetPort) continue;
+                    int processId = Marshal.ReadInt32(row, processOffset);
+                    if (processId > 0) processIds.Add(processId);
+                }
+            }
+            catch (Exception exception)
+            {
+                FileLog.Warn("Port lookup failed: " + exception.Message);
+            }
+            finally
+            {
+                if (buffer != IntPtr.Zero) Marshal.FreeHGlobal(buffer);
+            }
         }
 
         private static void ReadTable(int addressFamily, int targetPort, Dictionary<int, int> owners)

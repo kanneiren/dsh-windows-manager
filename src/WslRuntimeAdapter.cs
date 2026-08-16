@@ -10,6 +10,9 @@ namespace DeepSeekHarnessManager
     {
         private static readonly Dictionary<string, string> ShellByDistro = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private static readonly object ShellSync = new object();
+        private static readonly Dictionary<string, string> WslPathCache = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        private static readonly object PathCacheSync = new object();
+        private const int MaxWslPathCacheEntries = 128;
 
         public string RuntimeType { get { return InstanceModel.RuntimeTypeWsl; } }
 
@@ -224,18 +227,26 @@ namespace DeepSeekHarnessManager
         public static string ConvertToWindowsPath(string distro, string linuxPath)
         {
             if (String.IsNullOrWhiteSpace(linuxPath)) return String.Empty;
+            string cacheKey = "w:" + distro + "\n" + linuxPath;
+            string cached = GetCachedWslPath(cacheKey);
+            if (cached != null) return cached;
+            string converted;
             try
             {
                 CommandResult result = CommandRunner.RunCapture(FindWslExe(),
                     new string[] { "-d", distro, "--", "wslpath", "-w", linuxPath },
                     AppPaths.AppDirectory, 5000);
                 if (result.ExitCode == 0 && !String.IsNullOrWhiteSpace(result.StandardOutput))
-                    return result.StandardOutput.Trim();
+                    converted = result.StandardOutput.Trim();
+                else
+                    converted = "\\\\wsl.localhost\\" + distro + linuxPath.Replace('/', '\\');
             }
             catch
             {
+                converted = "\\\\wsl.localhost\\" + distro + linuxPath.Replace('/', '\\');
             }
-            return "\\\\wsl.localhost\\" + distro + linuxPath.Replace('/', '\\');
+            PutCachedWslPath(cacheKey, converted);
+            return converted;
         }
 
         public static string ResolveShell(string distro)
@@ -276,18 +287,42 @@ namespace DeepSeekHarnessManager
         public static string ConvertToWslPath(string distro, string windowsPath)
         {
             if (String.IsNullOrWhiteSpace(windowsPath)) return "~";
+            string cacheKey = "u:" + distro + "\n" + windowsPath;
+            string cached = GetCachedWslPath(cacheKey);
+            if (cached != null) return cached;
+            string converted = null;
             try
             {
                 string runDirectory = Directory.Exists(windowsPath) ? windowsPath : Path.GetDirectoryName(windowsPath);
                 if (String.IsNullOrWhiteSpace(runDirectory)) runDirectory = AppPaths.AppDirectory;
                 CommandResult result = CommandRunner.RunCapture(FindWslExe(), new string[] { "-d", distro, "--", "wslpath", "-u", windowsPath.Replace('\\', '/') }, runDirectory, 5000);
-                string converted = (result.StandardOutput ?? String.Empty).Trim();
-                if (!String.IsNullOrWhiteSpace(converted)) return converted;
+                string value = (result.StandardOutput ?? String.Empty).Trim();
+                if (result.ExitCode == 0 && !String.IsNullOrWhiteSpace(value)) converted = value;
             }
             catch
             {
             }
-            return ConvertWindowsToWslFallback(distro, windowsPath);
+            if (String.IsNullOrWhiteSpace(converted)) converted = ConvertWindowsToWslFallback(distro, windowsPath);
+            PutCachedWslPath(cacheKey, converted);
+            return converted;
+        }
+
+        private static string GetCachedWslPath(string key)
+        {
+            lock (PathCacheSync)
+            {
+                string value;
+                return WslPathCache.TryGetValue(key, out value) ? value : null;
+            }
+        }
+
+        private static void PutCachedWslPath(string key, string value)
+        {
+            lock (PathCacheSync)
+            {
+                if (WslPathCache.Count >= MaxWslPathCacheEntries) WslPathCache.Clear();
+                WslPathCache[key] = value;
+            }
         }
 
         private static string ConvertWindowsToWslFallback(string distro, string windowsPath)
