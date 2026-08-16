@@ -48,7 +48,7 @@ install, uninstall, open, start, stop, restart, exit, status
 
 ## Configuration Boundaries
 
-The first install creates one Windows Web instance with `TrayEnabled=true`. Initial runtime, workspace, source root, and preferred port can be selected from the installer or npm CLI. `RuntimeType` (`windows` | reserved `wsl`) and `Frontend` (`web` | reserved `oh-dsh`/`custom`) are stored per instance; only `windows` + `web` are implemented. Setting `TrayEnabled=false` runs the same EXE headless. Existing configuration is never replaced by a later install.
+The first install creates one Windows Web instance with `TrayEnabled=true`. Initial runtime, workspace, source root, and preferred port can be selected from the installer or npm CLI. `RuntimeType` (`windows` | `wsl`) and `Frontend` (`web` | reserved `oh-dsh`/`custom`) are stored per instance; `wsl` uses WslRuntimeAdapter and `oh-dsh`/`custom` fail explicitly until implemented. Setting `TrayEnabled=false` runs the same EXE headless. Existing configuration is never replaced by a later install.
 
 Adding, removing, or changing instances currently requires editing `config.json` and restarting the manager. There is no graphical instance editor yet.
 

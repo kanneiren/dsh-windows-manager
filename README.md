@@ -131,7 +131,7 @@ dsh-windows-manager wsl disable
 
 `configure --runtime wsl --wsl-distro <name>` 也会自动启用 WSL 支持并写入默认 distro。不在 WSL 内安装 Manager。
 
-`3080` 只是新实例的默认端口，并非写死。新安装可通过 `--port 4000` 指定；已有安装不会因再次执行安装命令而覆盖配置，应通过托盘菜单打开管理器配置文件，修改 `config.json` 中实例的 `PreferredPort`，然后退出并重新启动管理器。管理器会显式向 DSH 传递 `--port`，外部手动启动的 DSH 也只有在端口与实例配置一致时才会被安全接管。
+`3080` 只是新实例的默认端口，并非写死。新安装可通过 `--port 4000` 指定；已有安装不会因再次执行安装命令而覆盖配置，应通过托盘菜单打开管理器配置文件，修改 `config.json` 中实例的 `PreferredPort`，然后退出并重新启动管理器。管理器会显式向 DSH 传递 `--port`。外部手动启动的 Windows/WSL DSH 可通过托盘中的检测按钮或 CLI 被发现，并在指纹验证后接管为 attached 实例。
 
 Manager 运行期间，CLI 的 `status` / `open` / `start` / `stop` / `restart` / `exit` 会通过本机命名管道 `\\.\pipe\dsh-windows-manager-control-{user}` 交给 Primary，而不是启动第二个 Supervisor。该 Manager Control Protocol v1 提供 `getVersion`、`getStatus`、`listInstances`、`start`、`stop`、`restart`、`open`、`exit`，仅允许当前 Windows 用户访问，不监听 TCP，也不提供任意命令执行。
 

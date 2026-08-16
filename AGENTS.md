@@ -38,7 +38,7 @@ Do not describe the manager package as the DSH runtime. They are separate packag
 - Keep post-update compatibility smoke testing and verified rollback intact for global npm, npx, and source runtimes.
 - Preserve `%LOCALAPPDATA%\DeepSeekHarnessManager\config.json` and user data during install and upgrade.
 - Treat `PreferredPort` as configuration. `3080` is only the default, and multiple instances must have unique ports.
-- Keep instance `RuntimeType` (`windows` | reserved `wsl`) and `Frontend` (`web` | reserved `oh-dsh`/`custom`) in config and snapshots; only `windows` + `web` are implemented.
+- Keep instance `RuntimeType` (`windows` | `wsl`) and `Frontend` (`web` | reserved `oh-dsh`/`custom`) in config and snapshots; WSL is implemented, reserved frontends fail explicitly.
 - `TrayEnabled=false` must keep one EXE and one primary process running Core + Supervisor + Runtime Bridge + Manager Control API; never spawn a separate daemon.
 - `configure` must edit `config.json` in place and preserve unknown fields; `--autostart true` is the only path that writes the per-user Run key.
 - `open()` must resolve the configured frontend through `FrontendLauncher`; reserved frontends fail explicitly and never silently fall back to Web.

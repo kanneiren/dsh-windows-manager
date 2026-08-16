@@ -85,7 +85,7 @@ The one-second WinForms timer exists for lifecycle ticking and to coalesce IPC/p
 
 `config.json` contains an `Instances` array. Each instance has a unique `Id` and `PreferredPort`, plus its runtime, workspace, profile, optional source checkout, optional `DshHome`, pinned version, `RuntimeType`, and `Frontend`.
 
-`RuntimeType` is `windows` or `wsl`. Only `windows` is implemented; the field is reserved now so configuration and snapshots do not hard-code a Windows singleton. `Frontend` is `web`, `oh-dsh`, or `custom`; only `web` is implemented.
+`RuntimeType` is `windows` or `wsl`; both adapters are implemented. `Frontend` is `web`, `oh-dsh`, or `custom`; only `web` is implemented.
 
 Instance state records `Ownership`: `managed` when this Manager launched the process and has full lifecycle control, `attached` when the process was started externally and was later discovered/adopted. A Manager restart keeps `managed` ownership only when the persisted PID still matches the verified process.
 
@@ -126,7 +126,7 @@ Detection runs `wsl.exe --status` and `wsl.exe --list --quiet` only when invoked
 ```text
 RuntimeAdapters.Get(instance)
     → windows  WindowsRuntimeAdapter
-    → wsl      reserved; throws "adapter not implemented"
+    → wsl      WslRuntimeAdapter
 ```
 
 A runtime adapter owns:
@@ -184,7 +184,7 @@ never      → default wsl.exe --terminate <distro> (too broad)
 
 Externally started WSL DSH is adopted as `attached`. It is detected from its Linux PID and listening port, can be opened and monitored immediately, and can be stopped by revalidating the Linux PID/port and sending `kill` inside the distro after explicit confirmation. Full lifecycle control (restart/update) is available after the Manager starts its own WSL DSH with the Runtime Bridge.
 
-Config additions planned:
+Config additions:
 
 ```text
 RuntimeType = wsl

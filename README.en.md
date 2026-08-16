@@ -118,7 +118,7 @@ Non-interactive mode:
 dsh-windows-manager configure --runtime windows --frontend web --tray true --shortcut false --autostart true
 ```
 
-`--runtime` sets `RuntimeType` (`windows`; `wsl` is reserved), `--frontend` sets `web`/`oh-dsh`/`custom`, and `--tray`/`--shortcut`/`--autostart` control the tray, desktop shortcut, and Start-with-Windows behavior. There is no heavyweight first-run GUI wizard.
+`--runtime` sets `RuntimeType` (`windows` or `wsl`), `--frontend` sets `web`/`oh-dsh`/`custom`, and `--tray`/`--shortcut`/`--autostart` control the tray, desktop shortcut, and Start-with-Windows behavior. There is no heavyweight first-run GUI wizard.
 
 WSL is optional and disabled by default. Detect and enable it explicitly:
 
@@ -131,7 +131,7 @@ dsh-windows-manager wsl disable
 
 `configure --runtime wsl --wsl-distro <name>` also enables WSL support and stores the default distro. No Manager software is installed inside WSL.
 
-`3080` is only the default port for new instances; it is not hardcoded. For a new installation, use `--port 4000` to select another port. Re-running the installation command does not overwrite the configuration of an existing installation. Instead, open the manager configuration file from the tray menu, edit the instance's `PreferredPort` in `config.json`, then exit and restart the manager. The manager explicitly passes `--port` to DSH. A manually started external DSH process can be safely adopted only when its port matches the instance configuration.
+`3080` is only the default port for new instances; it is not hardcoded. For a new installation, use `--port 4000` to select another port. Re-running the installation command does not overwrite the configuration of an existing installation. Instead, open the manager configuration file from the tray menu, edit the instance's `PreferredPort` in `config.json`, then exit and restart the manager. The manager explicitly passes `--port` to DSH. Manually started Windows or WSL DSH processes can be discovered through the tray detection buttons or CLI and adopted as attached instances after fingerprint verification.
 
 While the Manager is running, CLI `status` / `open` / `start` / `stop` / `restart` / `exit` commands are forwarded to the primary over the local named pipe `\\.\pipe\dsh-windows-manager-control-{user}` instead of starting a second supervisor. Manager Control Protocol v1 provides `getVersion`, `getStatus`, `listInstances`, `start`, `stop`, `restart`, `open`, and `exit`; it is accessible only to the current Windows user, listens on no TCP endpoint, and offers no arbitrary command execution.
 
