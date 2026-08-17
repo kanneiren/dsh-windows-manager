@@ -11,13 +11,13 @@
 安装时，将下面这句话发给具有终端权限的编码 Agent：
 
 ```text
-请为当前 Windows 用户安装最新版 DeepSeek Harness Manager：确认 Node.js 18+ 和 npm 可用后，执行 npx --yes dsh-windows-manager install；官方源失败时，可在记录原 registry 后临时切换至 https://registry.npmmirror.com。安装后确认桌面快捷方式存在，再运行 npx --yes dsh-windows-manager status --json，等待 managerRunning 和默认实例的 webUiVerified 为 true。不要请求管理员权限、覆盖已有 config.json 或删除用户数据，最后报告安装结果和 registry 变更。
+请为当前 Windows 用户安装最新版 DeepSeek Harness Manager：确认 Node.js 18+ 和 npm 可用后，执行 npx --yes dsh-windows-manager install；官方源失败时，可在记录原 registry 后临时切换至 https://registry.npmmirror.com。安装后确认开始菜单快捷方式存在且可按 Win 键搜索到，再运行 npx --yes dsh-windows-manager status --json，等待 managerRunning 和默认实例的 webUiVerified 为 true。不要请求管理员权限、覆盖已有 config.json 或删除用户数据，最后报告安装结果和 registry 变更。
 ```
 
 卸载时，将下面这句话发给 Agent：
 
 ```text
-请卸载当前用户的 DeepSeek Harness Manager：执行 npx --yes dsh-windows-manager uninstall，删除应用和桌面快捷方式，保留配置、日志及正在运行的 DSH；若安装过全局 CLI，再执行 npm uninstall --global dsh-windows-manager。未经我明确确认，不要使用 --purge-data 或结束 DSH，最后报告删除项和保留项。
+请卸载当前用户的 DeepSeek Harness Manager：执行 npx --yes dsh-windows-manager uninstall，删除应用和开始菜单/桌面快捷方式，保留配置、日志及正在运行的 DSH；若安装过全局 CLI，再执行 npm uninstall --global dsh-windows-manager。未经我明确确认，不要使用 --purge-data 或结束 DSH，最后报告删除项和保留项。
 ```
 
 项目不提供额外的 MSI、NSIS 或 Setup 安装器。DSH 本身依赖 Node.js/npm，而管理器只需执行当前用户目录复制、首次配置和快捷方式创建；使用 npm CLI、Agent 或源码中的 `Install.cmd` 可以保持发布体积和维护面最小。
@@ -40,7 +40,7 @@ Install.cmd
 %LOCALAPPDATA%\DeepSeekHarnessManager
 ```
 
-桌面快捷方式直接启动 `DeepSeekHarnessManager.exe`，正常使用不会显示终端窗口。
+安装默认创建**开始菜单快捷方式** `DSH Manager`（Win 键输入 `DSH Manager` 可搜索到），目标命令为 `--action tray`：只打开托盘，不自动启动 DSH 或浏览器。需要桌面快捷方式时，安装命令加 `--desktop-shortcut`；完全不要快捷方式时加 `--no-shortcut`。快捷方式正常使用不会显示终端窗口。
 
 安装目录只包含运行软件所需的 EXE、语言包、运行适配器、图标和文档，不包含 `src`、`tests` 或构建脚本。配置、状态和日志放在应用目录之外，因此覆盖安装默认不会删除用户数据。
 
@@ -59,13 +59,16 @@ npm install --global dsh-windows-manager
 dsh-windows-manager install
 ```
 
-安装 npm 包本身不会通过 `postinstall` 修改系统。只有明确执行 `install` 子命令时才会复制应用和创建桌面快捷方式。
+安装 npm 包本身不会通过 `postinstall` 修改系统。只有明确执行 `install` 子命令时才会复制应用并创建开始菜单快捷方式（默认）；加 `--desktop-shortcut` 同时创建桌面快捷方式，加 `--no-shortcut` 不创建任何快捷方式。
 
 常用命令：
 
 ```text
 dsh-windows-manager install --no-launch
+dsh-windows-manager install --desktop-shortcut
+dsh-windows-manager install --no-shortcut
 dsh-windows-manager install --port 4000
+dsh-windows-manager tray
 dsh-windows-manager open
 dsh-windows-manager start
 dsh-windows-manager stop
@@ -77,7 +80,7 @@ dsh-windows-manager uninstall
 dsh-windows-manager uninstall --purge-data
 ```
 
-`start` 只启动 DSH，`open` 会启动并打开 Web UI。`uninstall` 默认保留配置和日志；`--purge-data` 才会完全清理。
+`tray` 只打开管理器托盘，不启动任何 DSH；`start` 只启动 DSH，`open` 会启动并打开 Web UI。`uninstall` 默认保留配置和日志；`--purge-data` 才会完全清理。
 
 首次运行采用 zero-config：只有一个 Windows DSH 和 Web frontend 时会直接使用默认值。需要高级配置时运行：
 
@@ -106,7 +109,7 @@ dsh-windows-manager wsl disable
 
 `3080` 只是新实例的默认端口，并非写死。新安装可通过 `--port 4000` 指定；已有安装不会因再次执行安装命令而覆盖配置，应通过托盘菜单打开管理器配置文件，修改 `config.json` 中实例的 `PreferredPort`，然后退出并重新启动管理器。管理器会显式向 DSH 传递 `--port`。外部手动启动的 Windows/WSL DSH 可通过托盘中的检测按钮或 CLI 被发现，并在指纹验证后接管为 attached 实例。
 
-Manager 运行期间，CLI 的 `status` / `open` / `start` / `stop` / `restart` / `exit` 会通过本机命名管道 `\\.\pipe\dsh-windows-manager-control-{user}` 交给 Primary，而不是启动第二个 Supervisor。该 Manager Control Protocol v1 提供 `getVersion`、`getStatus`、`listInstances`、`start`、`stop`、`restart`、`open`、`exit`，仅允许当前 Windows 用户访问，不监听 TCP，也不提供任意命令执行。
+Manager 运行期间，CLI 的 `status` / `tray` / `open` / `start` / `stop` / `restart` / `exit` 会通过本机命名管道 `\\.\pipe\dsh-windows-manager-control-{user}` 交给 Primary，而不是启动第二个 Supervisor。该 Manager Control Protocol v1 提供 `getVersion`、`getStatus`、`listInstances`、`start`、`stop`、`restart`、`open`、`tray`、`exit`，仅允许当前 Windows 用户访问，不监听 TCP，也不提供任意命令执行。
 
 `open` 遵循实例的 `Frontend` 配置：当前 `web` 打开本地 Web UI；`oh-dsh` 和 `custom` 已预留，但未配置实现时会明确报错，不会静默退回 Web。
 
@@ -126,7 +129,7 @@ npx --yes dsh-windows-manager uninstall
 
 从源码安装时，可双击源码仓库中的 `Uninstall.cmd`。
 
-默认卸载会删除应用目录和桌面快捷方式，但保留整个数据目录（配置、状态、日志、运行时状态和更新记录），也不会结束正在运行的 DSH。
+默认卸载会删除应用目录、开始菜单快捷方式和桌面快捷方式，但保留整个数据目录（配置、状态、日志、运行时状态和更新记录），也不会结束正在运行的 DSH。
 
 完全清理数据：
 
@@ -156,9 +159,10 @@ npx --yes dsh-windows-manager install
 
 ## 打开方式
 
-- 双击桌面快捷方式 `DSH Manager`：DSH 已运行时直接打开 Web UI；未运行时先启动，等待就绪后再打开。
+- 双击开始菜单或桌面快捷方式 `DSH Manager`：只打开管理器托盘，不启动 DSH；再从托盘菜单选择要操作的实例。
 - 双击托盘图标：打开默认实例的 Web UI。
-- 命令行运行 `npx --yes dsh-windows-manager open`：执行与桌面快捷方式相同的操作。
+- 命令行运行 `npx --yes dsh-windows-manager tray`：只打开托盘。
+- 命令行运行 `npx --yes dsh-windows-manager open`：启动默认实例并打开 Web UI。
 
 关闭浏览器不会结束 DSH。只需启动服务而不打开浏览器时，运行 `npx --yes dsh-windows-manager start`。
 
@@ -283,7 +287,7 @@ Manager Control Pipe 请求即时响应。由管理器启动并已连接 DSH IPC
 
 管理器只创建一个托盘图标。配置一个实例时，操作项直接显示；配置多个实例时，每个实例按 `Name` 显示为独立子菜单，并拥有自己的状态、版本、打开、启动、停止、重启、更新、详情、工作区和 DSH 设置文件操作。
 
-当前没有添加实例的图形界面。通过托盘菜单打开管理器配置文件，在 `config.json` 的 `Instances` 中加入具有唯一 `Id` 和 `PreferredPort` 的配置，然后退出并重新启动管理器。桌面快捷方式、托盘双击以及 CLI 的 `open`、`start`、`stop`、`restart` 默认只操作 `DefaultInstanceId`；`dsh-windows-manager status` 会列出全部实例。
+当前没有添加实例的图形界面。通过托盘菜单打开管理器配置文件，在 `config.json` 的 `Instances` 中加入具有唯一 `Id` 和 `PreferredPort` 的配置，然后退出并重新启动管理器。托盘双击以及 CLI 的 `open`、`start`、`stop`、`restart` 默认只操作 `DefaultInstanceId`；`dsh-windows-manager status` 会列出全部实例。
 
 ## 权限和安全软件
 

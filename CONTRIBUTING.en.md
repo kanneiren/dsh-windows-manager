@@ -60,7 +60,7 @@ A pull request should explain the user-visible change, security implications, te
 3. Run `npm pack` and inspect the files allowlist.
 4. Install from the generated tarball into an isolated directory.
 5. Perform a real per-user upgrade and verify that `config.json` is unchanged.
-6. Verify both locale files, plugin payload, desktop shortcut, tray process, and DSH Web fingerprint.
+6. Verify both locale files, plugin payload, Start Menu/desktop shortcuts, tray process, and DSH Web fingerprint.
 7. Re-run `Measure-Performance.ps1` on the release candidate, compare with the baseline in `docs/PERFORMANCE.md`, and update the baseline if the numbers changed noticeably.
 8. Scan tracked files for credentials and private data.
 9. Create a GitHub release artifact and checksums.

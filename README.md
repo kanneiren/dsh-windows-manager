@@ -25,6 +25,8 @@ dsh-windows-manager install
 dsh-windows-manager open
 ```
 
+安装默认只创建**开始菜单快捷方式**（Win 键可搜索到）并打开托盘，不会自动启动 DSH；需要桌面快捷方式时加 `--desktop-shortcut`，完全不要快捷方式时加 `--no-shortcut`。
+
 WSL2（在 Windows 终端执行）：
 
 ```powershell

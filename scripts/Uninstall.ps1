@@ -4,6 +4,7 @@ param(
     [string]$InstallRoot = '',
     [string]$DataRoot = '',
     [string]$ShortcutPath = '',
+    [string]$StartMenuShortcutPath = '',
     [switch]$NoShortcut
 )
 
@@ -59,17 +60,28 @@ Stop-InstalledManager -Executable $installedExe
 $usesDefaultShortcut = [string]::IsNullOrWhiteSpace($ShortcutPath)
 $desktop = [Environment]::GetFolderPath('Desktop')
 $resolvedShortcutPath = if ($usesDefaultShortcut) { Join-Path $desktop 'DSH Manager.lnk' } else { [System.IO.Path]::GetFullPath($ShortcutPath) }
-if (-not $NoShortcut -and (Test-Path -LiteralPath $resolvedShortcutPath)) { Remove-Item -LiteralPath $resolvedShortcutPath -Force }
+$usesDefaultStartMenuShortcut = [string]::IsNullOrWhiteSpace($StartMenuShortcutPath)
+$programs = [Environment]::GetFolderPath('Programs')
+$resolvedStartMenuShortcutPath = if ($usesDefaultStartMenuShortcut) {
+    if ([string]::IsNullOrWhiteSpace($programs)) { Join-Path $desktop 'DSH Manager.lnk' } else { Join-Path $programs 'DSH Manager.lnk' }
+} else {
+    [System.IO.Path]::GetFullPath($StartMenuShortcutPath)
+}
 $legacyShortcutRemoved = $true
-if (-not $NoShortcut -and $usesDefaultShortcut) {
-    $legacyShortcutRemoved = Remove-ShortcutIfTarget -Path (Join-Path $desktop 'DeepSeek Harness.lnk') -Executable $installedExe
+if (-not $NoShortcut) {
+    if (Test-Path -LiteralPath $resolvedShortcutPath) { Remove-Item -LiteralPath $resolvedShortcutPath -Force }
+    if (Test-Path -LiteralPath $resolvedStartMenuShortcutPath) { Remove-Item -LiteralPath $resolvedStartMenuShortcutPath -Force }
+    if ($usesDefaultShortcut) {
+        $legacyShortcutRemoved = Remove-ShortcutIfTarget -Path (Join-Path $desktop 'DeepSeek Harness.lnk') -Executable $installedExe
+    }
 }
 if (Test-Path -LiteralPath $installRoot) { Remove-Item -LiteralPath $installRoot -Recurse -Force }
 if ($PurgeData -and (Test-Path -LiteralPath $dataRoot)) { Remove-Item -LiteralPath $dataRoot -Recurse -Force }
 
+$shortcutMissing = (-not (Test-Path -LiteralPath $resolvedShortcutPath)) -and (-not (Test-Path -LiteralPath $resolvedStartMenuShortcutPath))
 [pscustomobject]@{
     ApplicationRemoved = -not (Test-Path -LiteralPath $installRoot)
-    ShortcutRemoved = $NoShortcut -or ($legacyShortcutRemoved -and -not (Test-Path -LiteralPath $resolvedShortcutPath))
+    ShortcutRemoved = $NoShortcut -or ($legacyShortcutRemoved -and $shortcutMissing)
     DataPreserved = -not $PurgeData
     Note = 'Running DeepSeek Harness processes are intentionally left running.'
 }

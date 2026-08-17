@@ -101,17 +101,17 @@ namespace DeepSeekHarnessManager
 
         private static string ParseAction(string[] args)
         {
-            if (args == null) return "open";
+            if (args == null) return "tray";
             int i;
             for (i = 0; i < args.Length; i++)
             {
                 if (String.Equals(args[i], "--action", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
                 {
                     string value = args[i + 1].ToLowerInvariant();
-                    if (value == "open" || value == "start" || value == "stop" || value == "restart" || value == "exit") return value;
+                    if (value == "open" || value == "start" || value == "stop" || value == "restart" || value == "exit" || value == "tray") return value;
                 }
             }
-            return "open";
+            return "tray";
         }
     }
 }

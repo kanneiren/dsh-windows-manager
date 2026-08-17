@@ -23,7 +23,7 @@ function printHelp() {
 Usage:
   dsh-windows-manager install [options]
   dsh-windows-manager uninstall [--purge-data]
-  dsh-windows-manager open|start|stop|restart|exit
+  dsh-windows-manager open|start|stop|restart|tray|exit
   dsh-windows-manager status [--json]
   dsh-windows-manager diagnostics [--json]
   dsh-windows-manager configure [options]
@@ -38,11 +38,12 @@ Install options:
   --workspace <path>                 DSH working directory (default: current directory)
   --port <1-65535>                   Preferred DSH port (default: plugin setting)
   --no-launch                        Install without starting the manager
-  --no-shortcut                      Do not create the desktop shortcut
+  --no-shortcut                      Do not create Start Menu or desktop shortcuts
+  --desktop-shortcut                 Also create the desktop shortcut
 
 Uninstall options:
   --purge-data                       Also remove configuration, state, and logs
-  --no-shortcut                      Do not touch the desktop shortcut
+  --no-shortcut                      Do not touch shortcuts
 
 Configure options:
   --runtime <windows|wsl>            Set the default instance runtime type
@@ -104,13 +105,14 @@ function addTestPathOverrides(args) {
   if (process.env.DSH_MANAGER_INSTALL_ROOT) args.push('-InstallRoot', installRoot);
   if (process.env.DSH_MANAGER_DATA_ROOT) args.push('-DataRoot', dataRoot);
   if (process.env.DSH_MANAGER_SHORTCUT_PATH) args.push('-ShortcutPath', process.env.DSH_MANAGER_SHORTCUT_PATH);
+  if (process.env.DSH_MANAGER_START_MENU_SHORTCUT_PATH) args.push('-StartMenuShortcutPath', process.env.DSH_MANAGER_START_MENU_SHORTCUT_PATH);
 }
 
 function install(args) {
   const options = parseOptions(
     args,
     ['--runtime', '--source-root', '--workspace', '--port'],
-    ['--no-launch', '--no-shortcut']
+    ['--no-launch', '--no-shortcut', '--desktop-shortcut']
   );
   const runtime = options['--runtime'] || 'auto';
   if (!['auto', 'global', 'npx', 'source'].includes(runtime)) throw new Error(`Unsupported runtime: ${runtime}`);
@@ -127,6 +129,7 @@ function install(args) {
   if (port > 0) powershellArgs.push('-Port', String(port));
   if (options['--no-launch']) powershellArgs.push('-NoLaunch');
   if (options['--no-shortcut']) powershellArgs.push('-NoShortcut');
+  if (options['--desktop-shortcut']) powershellArgs.push('-DesktopShortcut');
   addTestPathOverrides(powershellArgs);
   return runPowerShell('Install.ps1', powershellArgs);
 }
@@ -681,9 +684,9 @@ function setDesktopShortcut(enabled) {
     '  $shell = New-Object -ComObject WScript.Shell',
     '  $shortcut = $shell.CreateShortcut($path)',
     "  $shortcut.TargetPath = $target",
-    "  $shortcut.Arguments = '--action open'",
+    "  $shortcut.Arguments = '--action tray'",
     "  $shortcut.IconLocation = \"$icon,0\"",
-    "  $shortcut.Description = 'Start or open DeepSeek Harness and manage it from the Windows notification area.'",
+    "  $shortcut.Description = 'Open the DeepSeek Harness Manager tray icon without starting DSH.'",
     '  $shortcut.Save()',
     '} else {',
     "  Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue",
@@ -701,7 +704,7 @@ function setDesktopShortcut(enabled) {
 
 function setAutostart(enabled) {
   if (process.env.DSH_MANAGER_NO_REGISTRY === '1') return;
-  const value = `"${installedExe}" --action open`;
+  const value = `"${installedExe}" --action tray`;
   const command = enabled
     ? `New-Item -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' -Force | Out-Null; Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' -Name 'DeepSeekHarnessManager' -Value '${value.replace(/'/g, "''")}'`
     : `Remove-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' -Name 'DeepSeekHarnessManager' -ErrorAction SilentlyContinue`;
@@ -842,7 +845,7 @@ async function main() {
     if (sub === 'disable') return wslDisable(args);
     throw new Error(`Unknown wsl command: ${sub}. Use wsl status|detect|enable|disable.`);
   }
-  if (['open', 'start', 'stop', 'restart', 'exit'].includes(command)) {
+  if (['open', 'start', 'stop', 'restart', 'tray', 'exit'].includes(command)) {
     if (args.length > 0) throw new Error(`${command} does not accept additional arguments.`);
     return runManagerAction(command);
   }

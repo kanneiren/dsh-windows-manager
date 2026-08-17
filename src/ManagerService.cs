@@ -227,7 +227,7 @@ namespace DeepSeekHarnessManager
 
         public void HandleInitialAction(string action)
         {
-            action = String.IsNullOrWhiteSpace(action) ? "open" : action;
+            action = String.IsNullOrWhiteSpace(action) ? "tray" : action;
             if (String.Equals(action, "start", StringComparison.OrdinalIgnoreCase)) Start(null);
             else if (String.Equals(action, "stop", StringComparison.OrdinalIgnoreCase))
             {
@@ -236,6 +236,11 @@ namespace DeepSeekHarnessManager
             }
             else if (String.Equals(action, "restart", StringComparison.OrdinalIgnoreCase)) Restart(null);
             else if (String.Equals(action, "exit", StringComparison.OrdinalIgnoreCase)) RaiseExitRequested();
+            else if (String.Equals(action, "tray", StringComparison.OrdinalIgnoreCase))
+            {
+                // Shortcut / autostart / direct EXE launch: show the tray only.
+                // Do not start DSH or open a browser until the user chooses an action.
+            }
             else Open(null);
         }
 

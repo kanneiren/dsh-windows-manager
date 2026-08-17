@@ -14,7 +14,7 @@ This file is the starting point for coding agents working on `dsh-windows-manage
 ## Names
 
 - Product and desktop application: `DeepSeek Harness Manager`.
-- Default desktop shortcut: `DSH Manager`.
+- Default Start Menu shortcut: `DSH Manager` (desktop shortcut is opt-in).
 - GitHub repository and npm package: `dsh-windows-manager`.
 - Managed upstream runtime: `@deepseek-ai/dsh`.
 

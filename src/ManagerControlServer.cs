@@ -197,6 +197,12 @@ namespace DeepSeekHarnessManager
             if (command == "getstatus") return BuildGetStatusResponse(command);
             if (command == "start" || command == "stop" || command == "restart" || command == "open")
                 return ExecuteInstanceAction(command, instanceId);
+            if (command == "tray")
+            {
+                Dictionary<string, object> response = ManagerControlProtocol.NewResponse(command, true);
+                response["message"] = "The primary Manager is already running in the notification area.";
+                return response;
+            }
             if (command == "openwsl")
             {
                 string instanceIdValue = manager.OpenOrStartWsl();

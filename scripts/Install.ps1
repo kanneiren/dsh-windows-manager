@@ -10,7 +10,9 @@ param(
     [string]$InstallRoot = '',
     [string]$DataRoot = '',
     [string]$ShortcutPath = '',
+    [string]$StartMenuShortcutPath = '',
     [switch]$NoShortcut,
+    [switch]$DesktopShortcut,
     [switch]$NoLaunch
 )
 
@@ -52,6 +54,21 @@ function Remove-ShortcutIfTarget {
     } catch {
     }
 }
+
+function New-ManagerShortcut {
+    param([string]$Path, [string]$Executable, [string]$Icon, [string]$WorkingDirectory)
+    $directory = Split-Path -Parent $Path
+    if (-not [string]::IsNullOrWhiteSpace($directory)) { [System.IO.Directory]::CreateDirectory($directory) | Out-Null }
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcut = $shell.CreateShortcut($Path)
+    $shortcut.TargetPath = $Executable
+    $shortcut.Arguments = '--action tray'
+    $shortcut.WorkingDirectory = $WorkingDirectory
+    $shortcut.IconLocation = "$Icon,0"
+    $shortcut.Description = 'Open the DeepSeek Harness Manager tray icon without starting DSH.'
+    $shortcut.Save()
+}
+
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $defaultDist = [string]::IsNullOrWhiteSpace($DistPath)
@@ -102,7 +119,7 @@ if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
         Language = 'auto'
         TrayEnabled = $true
         StartWithWindows = $false
-        DesktopShortcut = $(-not $NoShortcut)
+        DesktopShortcut = $(-not $NoShortcut -and $DesktopShortcut)
         WslEnabled = $false
         WslDefaultDistro = ''
         DefaultInstanceId = 'web'
@@ -130,27 +147,61 @@ if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
 $usesDefaultShortcut = [string]::IsNullOrWhiteSpace($ShortcutPath)
 $desktop = [Environment]::GetFolderPath('Desktop')
 $resolvedShortcutPath = if ($usesDefaultShortcut) { Join-Path $desktop 'DSH Manager.lnk' } else { [System.IO.Path]::GetFullPath($ShortcutPath) }
+
+$usesDefaultStartMenuShortcut = [string]::IsNullOrWhiteSpace($StartMenuShortcutPath)
+$programs = [Environment]::GetFolderPath('Programs')
+$resolvedStartMenuShortcutPath = if ($usesDefaultStartMenuShortcut) {
+    if ([string]::IsNullOrWhiteSpace($programs)) { throw 'Windows Start Menu Programs folder is unavailable.' }
+    Join-Path $programs 'DSH Manager.lnk'
+} else {
+    [System.IO.Path]::GetFullPath($StartMenuShortcutPath)
+}
+
+$existingDesktopShortcut = $false
+if (Test-Path -LiteralPath $configPath -PathType Leaf) {
+    try {
+        $existingConfig = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+        $existingDesktopShortcut = [bool]$existingConfig.DesktopShortcut
+    } catch {
+    }
+}
+
+$startMenuShortcutCreated = $null
+$desktopShortcutCreated = $null
 if (-not $NoShortcut) {
     $shortcutIcon = Join-Path $installRoot 'assets\dsh-manager-shortcut.ico'
     if (-not (Test-Path -LiteralPath $shortcutIcon -PathType Leaf)) { throw 'The prebuilt shortcut icon is missing.' }
-    if ($usesDefaultShortcut) { Remove-ShortcutIfTarget -Path (Join-Path $desktop 'DeepSeek Harness.lnk') -Executable $installedExe }
-    $shortcutDirectory = Split-Path -Parent $resolvedShortcutPath
-    if (-not [string]::IsNullOrWhiteSpace($shortcutDirectory)) { [System.IO.Directory]::CreateDirectory($shortcutDirectory) | Out-Null }
-    $shell = New-Object -ComObject WScript.Shell
-    $shortcut = $shell.CreateShortcut($resolvedShortcutPath)
-    $shortcut.TargetPath = $installedExe
-    $shortcut.Arguments = '--action open'
-    $shortcut.WorkingDirectory = $Workspace
-    $shortcut.IconLocation = "$shortcutIcon,0"
-    $shortcut.Description = 'Start or open DeepSeek Harness and manage it from the Windows notification area.'
-    $shortcut.Save()
+
+    New-ManagerShortcut -Path $resolvedStartMenuShortcutPath -Executable $installedExe -Icon $shortcutIcon -WorkingDirectory $Workspace
+    $startMenuShortcutCreated = $resolvedStartMenuShortcutPath
+
+    if ($DesktopShortcut -or $existingDesktopShortcut) {
+        if ($usesDefaultShortcut) { Remove-ShortcutIfTarget -Path (Join-Path $desktop 'DeepSeek Harness.lnk') -Executable $installedExe }
+        New-ManagerShortcut -Path $resolvedShortcutPath -Executable $installedExe -Icon $shortcutIcon -WorkingDirectory $Workspace
+        $desktopShortcutCreated = $resolvedShortcutPath
+    }
 }
 
-if (-not $NoLaunch) { Start-Process -FilePath $installedExe -ArgumentList @('--action', 'open') }
+if (Test-Path -LiteralPath $configPath -PathType Leaf) {
+    try {
+        $storedConfig = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+        $storedDesktopShortcut = [bool]$storedConfig.DesktopShortcut
+        $shouldStoreDesktopShortcut = if ($NoShortcut) { $false } elseif ($DesktopShortcut) { $true } else { $storedDesktopShortcut }
+        if ($shouldStoreDesktopShortcut -ne $storedDesktopShortcut) {
+            $storedConfig.DesktopShortcut = $shouldStoreDesktopShortcut
+            [System.IO.File]::WriteAllText($configPath, ($storedConfig | ConvertTo-Json -Depth 8), [System.Text.UTF8Encoding]::new($false))
+        }
+    } catch {
+    }
+}
+
+if (-not $NoLaunch) { Start-Process -FilePath $installedExe -ArgumentList @('--action', 'tray') }
 
 [pscustomobject]@{
     Application = $installedExe
-    Shortcut = if ($NoShortcut) { $null } else { $resolvedShortcutPath }
+    StartMenuShortcut = $startMenuShortcutCreated
+    DesktopShortcut = $desktopShortcutCreated
+    Shortcut = $startMenuShortcutCreated
     Configuration = $configPath
     Runtime = $Runtime
     Workspace = $Workspace

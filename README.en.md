@@ -25,6 +25,8 @@ dsh-windows-manager install
 dsh-windows-manager open
 ```
 
+By default, install creates only a **Start Menu shortcut** (searchable with the Win key) and opens the tray without starting DSH. Add `--desktop-shortcut` for a desktop shortcut, or `--no-shortcut` to create no shortcuts at all.
+
 WSL2 (run from a Windows terminal):
 
 ```powershell

@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## Unreleased
+
+### Changed
+
+- Shortcuts and autostart now open the Manager tray only (`--action tray`) instead of starting DSH and a browser.
+- `install` creates a Start Menu shortcut by default so `DSH Manager` is searchable from the Win key; the desktop shortcut is opt-in with `--desktop-shortcut`, and `--no-shortcut` creates none.
+- Added the `dsh-windows-manager tray` command and `tray` Manager Control Protocol command for opening the tray without starting DSH.
+
 ## 0.3.1
 
 ### Fixed

@@ -11,13 +11,13 @@ This document supplements the README with installation and uninstallation detail
 To install, send the following prompt to a coding Agent with terminal access:
 
 ```text
-Install the latest DeepSeek Harness Manager for the current Windows user: confirm that Node.js 18+ and npm are available, then run npx --yes dsh-windows-manager install; if the official registry fails, record the original registry and temporarily switch the registry to https://registry.npmmirror.com before continuing. After installation, confirm that the desktop shortcut exists, then run npx --yes dsh-windows-manager status --json and wait until managerRunning and webUiVerified for the default instance are true. Do not request administrator privileges, overwrite an existing config.json, or delete user data. Finally, report the installation result and any registry changes.
+Install the latest DeepSeek Harness Manager for the current Windows user: confirm that Node.js 18+ and npm are available, then run npx --yes dsh-windows-manager install; if the official registry fails, record the original registry and temporarily switch the registry to https://registry.npmmirror.com before continuing. After installation, confirm that the Start Menu shortcut exists and is searchable from the Win key, then run npx --yes dsh-windows-manager status --json and wait until managerRunning and webUiVerified for the default instance are true. Do not request administrator privileges, overwrite an existing config.json, or delete user data. Finally, report the installation result and any registry changes.
 ```
 
 To uninstall, send the following prompt to the Agent:
 
 ```text
-Uninstall DeepSeek Harness Manager for the current user: run npx --yes dsh-windows-manager uninstall to remove the application and desktop shortcut while preserving the configuration, logs, and any running DSH process; if the global CLI was installed, also run npm uninstall --global dsh-windows-manager. Do not use --purge-data or terminate DSH without my explicit confirmation. Finally, report what was removed and what was preserved.
+Uninstall DeepSeek Harness Manager for the current user: run npx --yes dsh-windows-manager uninstall to remove the application and shortcuts while preserving the configuration, logs, and any running DSH process; if the global CLI was installed, also run npm uninstall --global dsh-windows-manager. Do not use --purge-data or terminate DSH without my explicit confirmation. Finally, report what was removed and what was preserved.
 ```
 
 The project does not provide an additional MSI, NSIS, or Setup installer. DSH itself depends on Node.js/npm, while the manager only needs to copy files into the current user's directory, create the initial configuration, and create a shortcut. Using the npm CLI, an Agent, or the source repository's `Install.cmd` keeps the release size and maintenance surface as small as possible.
@@ -40,7 +40,7 @@ Configuration and logs:
 %LOCALAPPDATA%\DeepSeekHarnessManager
 ```
 
-The desktop shortcut launches `DeepSeekHarnessManager.exe` directly. Normal use does not display a terminal window.
+Installation creates a **Start Menu shortcut** named `DSH Manager` by default (searchable with the Win key). Its target is `--action tray`: it only opens the tray and never starts DSH or a browser. Add `--desktop-shortcut` to also create the desktop shortcut, or `--no-shortcut` to create no shortcuts. Normal shortcut use does not display a terminal window.
 
 The installation directory contains only the EXE, language packs, runtime adapter, icons, and documentation required to run the software. It does not contain `src`, `tests`, or build scripts. Configuration, state, and logs are stored outside the application directory, so an in-place installation does not delete user data by default.
 
@@ -59,13 +59,16 @@ npm install --global dsh-windows-manager
 dsh-windows-manager install
 ```
 
-Installing the npm package alone does not modify the system through `postinstall`. The application is copied and the desktop shortcut is created only when you explicitly run the `install` subcommand.
+Installing the npm package alone does not modify the system through `postinstall`. The application is copied and the Start Menu shortcut is created only when you explicitly run the `install` subcommand.
 
 Common commands:
 
 ```text
 dsh-windows-manager install --no-launch
+dsh-windows-manager install --desktop-shortcut
+dsh-windows-manager install --no-shortcut
 dsh-windows-manager install --port 4000
+dsh-windows-manager tray
 dsh-windows-manager open
 dsh-windows-manager start
 dsh-windows-manager stop
@@ -77,7 +80,7 @@ dsh-windows-manager uninstall
 dsh-windows-manager uninstall --purge-data
 ```
 
-`start` starts DSH without opening a page, while `open` starts DSH and opens the Web UI. By default, `uninstall` preserves the configuration and logs; only `--purge-data` removes everything.
+`tray` opens only the Manager tray without starting DSH; `start` starts DSH without opening a page, while `open` starts DSH and opens the Web UI. By default, `uninstall` preserves the configuration and logs; only `--purge-data` removes everything.
 
 The first run uses zero-config discovery: with one Windows DSH and the Web frontend, sensible defaults are applied automatically. For advanced configuration run:
 
@@ -126,7 +129,7 @@ npx --yes dsh-windows-manager uninstall
 
 For an installation from source, double-click `Uninstall.cmd` in the source repository.
 
-By default, uninstallation removes the application directory and desktop shortcut, but preserves the entire data directory, including configuration, state, logs, runtime state, and update records. It also does not stop any running DSH process.
+By default, uninstallation removes the application directory plus Start Menu and desktop shortcuts, but preserves the entire data directory, including configuration, state, logs, runtime state, and update records. It also does not stop any running DSH process.
 
 To remove all data:
 
@@ -156,9 +159,10 @@ User-level npm configuration is recommended here instead of adding `--registry` 
 
 ## Opening DSH
 
-- Double-click the `DSH Manager` desktop shortcut: if DSH is already running, its Web UI opens directly; otherwise, DSH starts first and the Web UI opens when it is ready.
+- Double-click the `DSH Manager` Start Menu or desktop shortcut: it opens only the Manager tray without starting DSH. Choose the instance action from the tray menu.
 - Double-click the tray icon to open the default instance's Web UI.
-- Run `npx --yes dsh-windows-manager open` from the command line to perform the same action as the desktop shortcut.
+- Run `npx --yes dsh-windows-manager tray` to open only the tray.
+- Run `npx --yes dsh-windows-manager open` from the command line to start the default instance and open its Web UI.
 
 Closing the browser does not stop DSH. To start the service without opening a browser, run `npx --yes dsh-windows-manager start`.
 
@@ -283,7 +287,7 @@ For strong isolation, configure a different `DshHome` for each instance. This pr
 
 The manager creates only one tray icon. With one configured instance, its actions are shown directly. With multiple instances, each instance appears as a separate submenu under its `Name`, with its own status, version, open, start, stop, restart, update, details, workspace, and DSH settings-file actions.
 
-There is currently no graphical interface for adding instances. Open the manager configuration file from the tray menu, add configurations with unique `Id` and `PreferredPort` values under `Instances` in `config.json`, then exit and restart the manager. The desktop shortcut, tray-icon double-click, and the CLI's `open`, `start`, `stop`, and `restart` commands operate only on `DefaultInstanceId` by default. `dsh-windows-manager status` lists all instances.
+There is currently no graphical interface for adding instances. Open the manager configuration file from the tray menu, add configurations with unique `Id` and `PreferredPort` values under `Instances` in `config.json`, then exit and restart the manager. The tray-icon double-click and the CLI's `open`, `start`, `stop`, and `restart` commands operate only on `DefaultInstanceId` by default. `dsh-windows-manager status` lists all instances.
 
 ## Permissions and Security Software
 

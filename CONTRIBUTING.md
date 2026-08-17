@@ -60,7 +60,7 @@ node .\tests\npm-package.test.mjs .\dsh-windows-manager-0.2.1.tgz
 3. 运行 `npm pack` 并检查文件允许列表。
 4. 从生成的 tarball 安装到隔离目录。
 5. 执行一次真实的按用户升级，并验证 `config.json` 未被更改。
-6. 验证两个区域设置文件、插件载荷、桌面快捷方式、托盘进程及 DSH Web 指纹。
+6. 验证两个区域设置文件、插件载荷、开始菜单/桌面快捷方式、托盘进程及 DSH Web 指纹。
 7. 对发布候选重新运行 `Measure-Performance.ps1`，与 `docs/PERFORMANCE.md` 中的基线对比，如数字明显变化则更新基线。
 8. 扫描已跟踪文件中的凭据和私有数据。
 9. 创建 GitHub Release 产物和校验和。

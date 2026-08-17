@@ -18,11 +18,13 @@ const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-manager-cli-'))
 const installRoot = path.join(temporaryRoot, 'app');
 const dataRoot = path.join(temporaryRoot, 'data');
 const shortcutPath = path.join(temporaryRoot, 'Desktop', 'DSH Manager.lnk');
+const startMenuShortcutPath = path.join(temporaryRoot, 'StartMenu', 'DSH Manager.lnk');
 const environment = {
   ...process.env,
   DSH_MANAGER_INSTALL_ROOT: installRoot,
   DSH_MANAGER_DATA_ROOT: dataRoot,
   DSH_MANAGER_SHORTCUT_PATH: shortcutPath,
+  DSH_MANAGER_START_MENU_SHORTCUT_PATH: startMenuShortcutPath,
   DSH_MANAGER_NO_REGISTRY: '1'
 };
 
@@ -55,6 +57,7 @@ try {
   assert.ok(fs.existsSync(path.join(installRoot, 'CONTRIBUTING.en.md')));
   assert.ok(fs.existsSync(path.join(installRoot, 'docs', 'ARCHITECTURE.md')));
   assert.equal(fs.existsSync(shortcutPath), false);
+  assert.equal(fs.existsSync(startMenuShortcutPath), false);
 
   const configPath = path.join(dataRoot, 'config.json');
   const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
@@ -131,12 +134,19 @@ try {
 
   result = run(['install', '--no-launch', '--workspace', temporaryRoot]);
   assert.equal(result.status, 0, result.stderr);
-  assert.ok(fs.existsSync(shortcutPath));
+  assert.ok(fs.existsSync(startMenuShortcutPath), 'default install should create the Start Menu shortcut');
+  assert.equal(fs.existsSync(shortcutPath), false, 'default install should not create the desktop shortcut');
+
+  result = run(['install', '--no-launch', '--desktop-shortcut', '--workspace', temporaryRoot]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(fs.existsSync(shortcutPath), '--desktop-shortcut should create the desktop shortcut');
+  assert.equal(JSON.parse(fs.readFileSync(configPath, 'utf8')).DesktopShortcut, true);
+
   const inspectShortcut = spawnSync('powershell.exe', [
     '-NoLogo',
     '-NoProfile',
     '-Command',
-    '$shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($env:DSH_MANAGER_TEST_SHORTCUT); [pscustomobject]@{ TargetPath = $shortcut.TargetPath; IconLocation = $shortcut.IconLocation } | ConvertTo-Json -Compress'
+    '$shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($env:DSH_MANAGER_TEST_SHORTCUT); [pscustomobject]@{ TargetPath = $shortcut.TargetPath; Arguments = $shortcut.Arguments; IconLocation = $shortcut.IconLocation } | ConvertTo-Json -Compress'
   ], {
     encoding: 'utf8',
     env: { ...process.env, DSH_MANAGER_TEST_SHORTCUT: shortcutPath },
@@ -145,12 +155,14 @@ try {
   assert.equal(inspectShortcut.status, 0, inspectShortcut.stderr);
   const shortcut = JSON.parse(inspectShortcut.stdout);
   assert.equal(fs.realpathSync.native(shortcut.TargetPath).toLowerCase(), fs.realpathSync.native(path.join(installRoot, 'DeepSeekHarnessManager.exe')).toLowerCase());
+  assert.equal(shortcut.Arguments, '--action tray');
   assert.equal(fs.realpathSync.native(shortcut.IconLocation.replace(/,0$/, '')).toLowerCase(), fs.realpathSync.native(path.join(installRoot, 'assets', 'dsh-manager-shortcut.ico')).toLowerCase());
 
   result = run(['uninstall', '--purge-data']);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(fs.existsSync(dataRoot), false);
   assert.equal(fs.existsSync(shortcutPath), false);
+  assert.equal(fs.existsSync(startMenuShortcutPath), false);
 
   result = run(['--version']);
   assert.equal(result.status, 0);
