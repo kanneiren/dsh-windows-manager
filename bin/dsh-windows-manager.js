@@ -14,6 +14,8 @@ const defaultDataRoot = path.join(process.env.LOCALAPPDATA || path.join(os.homed
 const dataRoot = process.env.DSH_MANAGER_DATA_ROOT || defaultDataRoot;
 const installRoot = process.env.DSH_MANAGER_INSTALL_ROOT || path.join(dataRoot, 'app');
 const installedExe = path.join(installRoot, 'DeepSeekHarnessManager.exe');
+const wslSelection = require('./wsl-distro-selection');
+
 
 function printHelp() {
   console.log(`DeepSeek Harness Manager ${metadata.version}
@@ -446,15 +448,19 @@ function wslInfo() {
     installed: false,
     defaultDistro: '',
     distros: [],
+    distroStates: [],
+    userDistros: [],
+    preferredDistro: '',
     statusText: ''
   };
   const status = childProcess.spawnSync('wsl.exe', ['--status'], {
     encoding: 'utf16le',
     windowsHide: true
   });
-  if (status.error) return result;
-  result.installed = status.status === 0;
-  if (status.stdout) result.statusText = status.stdout.trim();
+  if (!status.error) {
+    result.installed = status.status === 0;
+    if (status.stdout) result.statusText = status.stdout.trim();
+  }
   const list = childProcess.spawnSync('wsl.exe', ['--list', '--quiet'], {
     encoding: 'utf16le',
     windowsHide: true
@@ -463,7 +469,27 @@ function wslInfo() {
     result.installed = true;
     result.distros = list.stdout.replace(/\0/g, '').split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
   }
+  const verbose = childProcess.spawnSync('wsl.exe', ['--list', '--verbose'], {
+    encoding: 'utf16le',
+    windowsHide: true
+  });
+  if (!verbose.error && verbose.status === 0 && verbose.stdout) {
+    result.distroStates = wslSelection.parseWslVerboseOutput(verbose.stdout);
+  }
+  const defaultState = result.distroStates.find((state) => state.isDefault);
+  result.defaultDistro = defaultState ? defaultState.name : '';
+  result.userDistros = wslSelection.userWslDistros(result.distros);
+  result.preferredDistro = wslSelection.selectPreferredWslDistro('', result.distros, result.distroStates) || '';
   return result;
+}
+
+function describeWslDistroChoiceError(info) {
+  if (!info.distros.length) return 'No WSL distros were detected.';
+  if (!info.userDistros.length) {
+    return `WSL only reports container-runtime distros (${info.distros.join(', ')}). Install a general-purpose WSL distribution such as Ubuntu, then try again.`;
+  }
+  const candidates = info.userDistros.join(', ');
+  return `Multiple WSL distros detected (${candidates}). Run wsl enable --distro <name> first.`;
 }
 
 async function wslOpen(args) {
@@ -475,9 +501,8 @@ async function wslOpen(args) {
   if (!info.installed) throw new Error('WSL is not installed or wsl.exe is unavailable.');
   let distro = config.WslDefaultDistro || '';
   if (!distro) {
-    if (info.distros.length === 1) distro = info.distros[0];
-    else if (info.distros.length === 0) throw new Error('No WSL distros were detected.');
-    else throw new Error(`Multiple WSL distros detected (${info.distros.join(', ')}). Run wsl enable --distro <name> first.`);
+    distro = wslSelection.selectPreferredWslDistro(config.WslDefaultDistro || '', info.distros, info.distroStates);
+    if (!distro) throw new Error(describeWslDistroChoiceError(info));
   }
   config.WslEnabled = true;
   config.WslDefaultDistro = distro;
@@ -536,7 +561,9 @@ async function wslStatus(args) {
     installed: info.installed,
     enabled: config.WslEnabled === true,
     defaultDistro: config.WslDefaultDistro || '',
+    preferredDistro: info.preferredDistro,
     distros: info.distros,
+    userDistros: info.userDistros,
     wslInstances,
     statusText: info.statusText
   };
@@ -546,6 +573,7 @@ async function wslStatus(args) {
     console.log(`WSL: ${info.installed ? 'installed' : 'not installed'}`);
     console.log(`WSL support: ${result.enabled ? 'enabled' : 'disabled'}`);
     if (result.defaultDistro) console.log(`Default distro: ${result.defaultDistro}`);
+    if (info.preferredDistro) console.log(`Preferred distro: ${info.preferredDistro}`);
     console.log(`Detected distros: ${result.distros.length ? result.distros.join(', ') : 'none'}`);
     if (wslInstances.length) console.log(`WSL instances: ${wslInstances.join(', ')}`);
   }
@@ -560,6 +588,8 @@ async function wslDetect(args) {
   } else {
     console.log(`WSL: ${info.installed ? 'installed' : 'not installed'}`);
     console.log(`Distros: ${info.distros.length ? info.distros.join(', ') : 'none'}`);
+    console.log(`General-purpose distros: ${info.userDistros.length ? info.userDistros.join(', ') : 'none'}`);
+    if (info.preferredDistro) console.log(`Preferred distro: ${info.preferredDistro}`);
   }
   return info.installed ? 0 : 1;
 }
@@ -573,9 +603,8 @@ async function wslEnable(args) {
   if (!info.installed) throw new Error('WSL is not installed or wsl.exe is unavailable. Install WSL and a distro first.');
   let distro = options['--distro'] ? String(options['--distro']).trim() : '';
   if (!distro) {
-    if (info.distros.length === 1) distro = info.distros[0];
-    else if (info.distros.length === 0) throw new Error('No WSL distros were detected.');
-    else throw new Error(`Multiple WSL distros detected (${info.distros.join(', ')}). Choose one with --distro.`);
+    distro = wslSelection.selectPreferredWslDistro('', info.distros, info.distroStates);
+    if (!distro) throw new Error(describeWslDistroChoiceError(info));
   }
   if (!info.distros.includes(distro)) throw new Error(`WSL distro was not detected: ${distro}. Detected: ${info.distros.join(', ') || 'none'}`);
   config.WslEnabled = true;
@@ -614,7 +643,7 @@ function question(query) {
 function detectRuntimes() {
   const runtimes = [{ id: 'windows', label: 'Windows' }];
   const info = wslInfo();
-  for (const distro of info.distros) runtimes.push({ id: 'wsl', label: `${distro} (WSL)` });
+  for (const distro of info.userDistros) runtimes.push({ id: 'wsl', label: `${distro} (WSL)` });
   return runtimes;
 }
 
@@ -757,9 +786,8 @@ async function configure(args) {
     if (!wslDistro) {
       const info = wslInfo();
       if (!info.installed) throw new Error('WSL is not installed or wsl.exe is unavailable.');
-      if (info.distros.length === 1) wslDistro = info.distros[0];
-      else if (info.distros.length === 0) throw new Error('No WSL distros were detected.');
-      else throw new Error(`Multiple WSL distros detected (${info.distros.join(', ')}). Specify --wsl-distro.`);
+      wslDistro = wslSelection.selectPreferredWslDistro('', info.distros, info.distroStates);
+      if (!wslDistro) throw new Error(describeWslDistroChoiceError(info));
     }
     config.WslDefaultDistro = wslDistro;
     instance.WslDistro = wslDistro;

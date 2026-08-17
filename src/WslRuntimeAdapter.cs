@@ -6,6 +6,13 @@ using System.Text;
 
 namespace DeepSeekHarnessManager
 {
+    public sealed class WslDistroState
+    {
+        public string Name { get; set; }
+        public string State { get; set; }
+        public bool IsDefault { get; set; }
+    }
+
     public sealed class WslRuntimeAdapter : IRuntimeAdapter
     {
         private static readonly Dictionary<string, string> ShellByDistro = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -172,6 +179,191 @@ namespace DeepSeekHarnessManager
             {
             }
             return distros;
+        }
+
+        public static List<WslDistroState> DetectDistroStates()
+        {
+            List<WslDistroState> states = new List<WslDistroState>();
+            try
+            {
+                string wsl = FindWslExe();
+                if (!File.Exists(wsl)) return states;
+                using (System.Diagnostics.Process process = new System.Diagnostics.Process())
+                {
+                    process.StartInfo.FileName = wsl;
+                    process.StartInfo.Arguments = "--list --verbose";
+                    process.StartInfo.UseShellExecute = false;
+                    process.StartInfo.CreateNoWindow = true;
+                    process.StartInfo.RedirectStandardOutput = true;
+                    process.StartInfo.StandardOutputEncoding = Encoding.Unicode;
+                    if (!process.Start()) return states;
+                    string output = process.StandardOutput.ReadToEnd();
+                    process.WaitForExit(10000);
+                    if (process.ExitCode != 0) return states;
+                    foreach (string value in output.Replace("\0", String.Empty).Split(new char[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        string line = value.Trim();
+                        if (line.Length == 0) continue;
+                        bool isDefault = false;
+                        if (line[0] == '*')
+                        {
+                            isDefault = true;
+                            line = line.Substring(1).Trim();
+                        }
+                        string[] columns = line.Split(new char[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                        if (columns.Length < 3) continue;
+                        bool header = (String.Equals(columns[0], "NAME", StringComparison.OrdinalIgnoreCase) ||
+                            String.Equals(columns[0], "名称", StringComparison.OrdinalIgnoreCase)) &&
+                            (String.Equals(columns[columns.Length - 2], "STATE", StringComparison.OrdinalIgnoreCase) ||
+                            String.Equals(columns[columns.Length - 2], "状态", StringComparison.OrdinalIgnoreCase)) &&
+                            (String.Equals(columns[columns.Length - 1], "VERSION", StringComparison.OrdinalIgnoreCase) ||
+                            String.Equals(columns[columns.Length - 1], "版本", StringComparison.OrdinalIgnoreCase));
+                        if (header) continue;
+                        WslDistroState state = new WslDistroState();
+                        state.Name = String.Join(" ", columns, 0, columns.Length - 2);
+                        state.State = columns[columns.Length - 2];
+                        state.IsDefault = isDefault;
+                        states.Add(state);
+                    }
+                }
+            }
+            catch
+            {
+            }
+            return states;
+        }
+
+        /// <summary>
+        /// Docker Desktop and similar products register helper distros that are
+        /// not general-purpose Linux environments. DSH cannot be launched there.
+        /// </summary>
+        public static bool IsUserWslDistro(string distro)
+        {
+            if (String.IsNullOrWhiteSpace(distro)) return false;
+            string name = distro.Trim().ToLowerInvariant();
+            if (name == "docker-desktop" || name == "docker-desktop-data") return false;
+            if (name.StartsWith("docker-desktop-", StringComparison.Ordinal)) return false;
+            if (name == "rancher-desktop" || name == "rancher-desktop-data") return false;
+            if (name.StartsWith("rancher-desktop-", StringComparison.Ordinal)) return false;
+            if (name.StartsWith("podman-machine-", StringComparison.Ordinal)) return false;
+            return true;
+        }
+
+        public static int ScoreUserWslDistro(string distro)
+        {
+            if (String.IsNullOrWhiteSpace(distro)) return 0;
+            string name = distro.Trim().ToLowerInvariant();
+            if (name.StartsWith("ubuntu", StringComparison.Ordinal)) return 100;
+            if (name == "debian" || name.StartsWith("debian-", StringComparison.Ordinal)) return 90;
+            if (name.StartsWith("kali", StringComparison.Ordinal)) return 85;
+            if (name.IndexOf("suse", StringComparison.Ordinal) >= 0) return 80;
+            if (name.IndexOf("fedora", StringComparison.Ordinal) >= 0 ||
+                name.IndexOf("rocky", StringComparison.Ordinal) >= 0 ||
+                name.IndexOf("alma", StringComparison.Ordinal) >= 0 ||
+                name.IndexOf("centos", StringComparison.Ordinal) >= 0 ||
+                name.IndexOf("rhel", StringComparison.Ordinal) >= 0 ||
+                name.IndexOf("oracle", StringComparison.Ordinal) >= 0) return 75;
+            if (name.StartsWith("arch", StringComparison.Ordinal) ||
+                name.IndexOf("manjaro", StringComparison.Ordinal) >= 0 ||
+                name.IndexOf("endeavouros", StringComparison.Ordinal) >= 0) return 70;
+            if (name.IndexOf("alpine", StringComparison.Ordinal) >= 0) return 60;
+            return 0;
+        }
+
+        public static string SelectPreferredDistro(string configured, List<string> detected, List<WslDistroState> states)
+        {
+            if (detected == null || detected.Count == 0) return null;
+
+            if (!String.IsNullOrWhiteSpace(configured))
+            {
+                string configuredName = configured.Trim();
+                foreach (string item in detected)
+                {
+                    if (String.Equals(item, configuredName, StringComparison.OrdinalIgnoreCase)) return item;
+                }
+            }
+
+            List<string> candidates = new List<string>();
+            foreach (string item in detected)
+            {
+                if (IsUserWslDistro(item) && !ContainsDistro(candidates, item)) candidates.Add(item);
+            }
+            if (candidates.Count == 0) return null;
+            if (candidates.Count == 1) return candidates[0];
+
+            if (states != null)
+            {
+                foreach (WslDistroState state in states)
+                {
+                    if (state == null || !state.IsDefault || String.IsNullOrWhiteSpace(state.Name)) continue;
+                    string match = FindDistro(candidates, state.Name);
+                    if (match != null) return match;
+                }
+
+                List<string> running = new List<string>();
+                foreach (WslDistroState state in states)
+                {
+                    if (state == null || String.IsNullOrWhiteSpace(state.Name)) continue;
+                    if (!String.Equals(state.State, "Running", StringComparison.OrdinalIgnoreCase)) continue;
+                    string match = FindDistro(candidates, state.Name);
+                    if (match != null && !ContainsDistro(running, match)) running.Add(match);
+                }
+                if (running.Count == 1) return running[0];
+            }
+
+            string best = null;
+            int bestScore = -1;
+            bool tie = false;
+            foreach (string candidate in candidates)
+            {
+                int score = ScoreUserWslDistro(candidate);
+                if (score > bestScore)
+                {
+                    best = candidate;
+                    bestScore = score;
+                    tie = false;
+                }
+                else if (score == bestScore)
+                {
+                    tie = true;
+                }
+            }
+            if (best != null && !tie) return best;
+            return null;
+        }
+
+        public static string SelectPreferredDistro(string configured)
+        {
+            return SelectPreferredDistro(configured, DetectDistros(), DetectDistroStates());
+        }
+
+        public static List<string> GetUserWslDistros(List<string> detected)
+        {
+            List<string> candidates = new List<string>();
+            if (detected == null) return candidates;
+            foreach (string item in detected)
+            {
+                if (IsUserWslDistro(item) && !ContainsDistro(candidates, item)) candidates.Add(item);
+            }
+            return candidates;
+        }
+
+        private static bool ContainsDistro(List<string> distros, string distro)
+        {
+            foreach (string item in distros)
+            {
+                if (String.Equals(item, distro, StringComparison.OrdinalIgnoreCase)) return true;
+            }
+            return false;
+        }
+
+        private static string FindDistro(List<string> distros, string distro)
+        {
+            foreach (string item in distros)
+            {
+                if (String.Equals(item, distro, StringComparison.OrdinalIgnoreCase)) return item;
+            }
+            return null;
         }
 
         public string GetDistro(InstanceConfig instance)

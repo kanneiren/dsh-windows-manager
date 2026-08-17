@@ -117,7 +117,7 @@ wsl status [--json]
 wsl disable
 ```
 
-Detection runs `wsl.exe --status` and `wsl.exe --list --quiet` only when invoked; no background WSL polling exists.
+Detection runs `wsl.exe --status`, `wsl.exe --list --quiet`, and `wsl.exe --list --verbose` only when invoked; no background WSL polling exists. The distro list is filtered to general-purpose environments (Docker Desktop, Rancher Desktop, and Podman helper distros are ignored), then auto-selected in this order: configured distro, the single remaining candidate, the WSL default distro, the single running candidate, or the highest-known-distribution score. Only an ambiguous set of general-purpose distros asks for `--distro`.
 
 ## Runtime Adapter Boundary
 
@@ -156,7 +156,8 @@ Implemented: Windows Manager manages a DSH process inside WSL2. No Manager binar
 Discovery and launch are on demand only, never steady polling:
 
 ```text
-wsl.exe --list --quiet                 → distro list
+wsl.exe --list --quiet                 → raw distro list
+wsl.exe --list --verbose               → default marker and running state
 wsl.exe -d <distro> -- <shell> ...     → DSH detection / PATH / nvm setup
 wsl.exe -d <distro> --cd <dir> -- <shell> 'exec dsh ...' → launch
 ```
@@ -188,10 +189,10 @@ Config additions:
 
 ```text
 RuntimeType = wsl
-WslDistro   = <distro selected from wsl.exe --list --quiet>
+WslDistro   = <auto-selected or user-configured distro>
 ```
 
-The distro is always user-selected/configured. The Manager never assumes Ubuntu or any fixed distribution name.
+The distro is normally auto-selected from the filtered general-purpose list and persisted as `WslDefaultDistro`; it can still be overridden with `wsl enable --distro <name>` or `configure --wsl-distro <name>`. The Manager never assumes Ubuntu or any fixed distribution name.
 
 Workspace path conversion uses `wsl.exe wslpath`. Diagnostics report `runtimeType=wsl`, the Linux DSH PID from the bridge, and the Windows `wsl.exe` handle PID.
 

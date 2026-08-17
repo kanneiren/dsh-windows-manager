@@ -43,6 +43,7 @@ namespace DeepSeekHarnessManager.Tests
                 Run("windows DSH port detection", TestWindowsDshPortDetection);
                 Run("WSL port conflict inspection", TestWslPortConflictInspection);
                 Run("WSL path fallback", TestWslPathFallback);
+                Run("WSL distro selection", TestWslDistroSelection);
                 Run("runtime resolution", TestRuntimeResolution);
                 Run("runtime adapter registry", TestRuntimeAdapters);
                 Run("runtime bridge patch", TestRuntimeBridgePatch);
@@ -521,6 +522,52 @@ namespace DeepSeekHarnessManager.Tests
             string unc = WslRuntimeAdapter.ConvertToWindowsPath("missing-distro-for-test", "/home/user/.dsh/settings.yaml");
             Assert(unc.IndexOf("wsl.localhost", StringComparison.OrdinalIgnoreCase) >= 0 && unc.IndexOf("settings.yaml", StringComparison.OrdinalIgnoreCase) >= 0, "WSL UNC fallback should construct a wsl.localhost path: " + unc);
         }
+
+        private static void TestWslDistroSelection()
+        {
+            Assert(!WslRuntimeAdapter.IsUserWslDistro("docker-desktop"), "docker-desktop should not be a user WSL distro");
+            Assert(!WslRuntimeAdapter.IsUserWslDistro("docker-desktop-data"), "docker-desktop-data should not be a user WSL distro");
+            Assert(!WslRuntimeAdapter.IsUserWslDistro("rancher-desktop"), "rancher-desktop should not be a user WSL distro");
+            Assert(!WslRuntimeAdapter.IsUserWslDistro("podman-machine-default"), "podman-machine-default should not be a user WSL distro");
+            Assert(WslRuntimeAdapter.IsUserWslDistro("Ubuntu-24.04"), "Ubuntu-24.04 should be a user WSL distro");
+            Assert(WslRuntimeAdapter.IsUserWslDistro("Debian"), "Debian should be a user WSL distro");
+
+            List<string> dockerAndUbuntu = new List<string>();
+            dockerAndUbuntu.Add("docker-desktop");
+            dockerAndUbuntu.Add("Ubuntu-24.04");
+            List<WslDistroState> states = new List<WslDistroState>();
+            WslDistroState dockerState = new WslDistroState();
+            dockerState.Name = "docker-desktop";
+            dockerState.State = "Stopped";
+            dockerState.IsDefault = true;
+            states.Add(dockerState);
+            WslDistroState ubuntuState = new WslDistroState();
+            ubuntuState.Name = "Ubuntu-24.04";
+            ubuntuState.State = "Running";
+            ubuntuState.IsDefault = false;
+            states.Add(ubuntuState);
+            string selected = WslRuntimeAdapter.SelectPreferredDistro(null, dockerAndUbuntu, states);
+            Assert(selected == "Ubuntu-24.04", "docker-desktop should be skipped in favor of Ubuntu-24.04: " + (selected ?? "<null>"));
+
+            List<string> dockerOnly = new List<string>();
+            dockerOnly.Add("docker-desktop");
+            Assert(WslRuntimeAdapter.SelectPreferredDistro(null, dockerOnly, null) == null, "container-only WSL should not select a distro");
+
+            List<string> twoReal = new List<string>();
+            twoReal.Add("Debian");
+            twoReal.Add("Ubuntu-22.04");
+            selected = WslRuntimeAdapter.SelectPreferredDistro(null, twoReal, null);
+            Assert(selected == "Ubuntu-22.04", "known general-purpose distro scoring should prefer Ubuntu: " + (selected ?? "<null>"));
+
+            selected = WslRuntimeAdapter.SelectPreferredDistro("Debian", twoReal, null);
+            Assert(selected == "Debian", "explicitly configured distro should win: " + (selected ?? "<null>"));
+
+            List<string> ambiguous = new List<string>();
+            ambiguous.Add("MyCustomOne");
+            ambiguous.Add("MyCustomTwo");
+            Assert(WslRuntimeAdapter.SelectPreferredDistro(null, ambiguous, null) == null, "ambiguous custom distros should require explicit configuration");
+        }
+
 
         private static void TestRuntimeResolution()
         {

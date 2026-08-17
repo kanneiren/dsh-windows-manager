@@ -129,7 +129,7 @@ dsh-windows-manager wsl status --json
 dsh-windows-manager wsl disable
 ```
 
-`configure --runtime wsl --wsl-distro <name>` 也会自动启用 WSL 支持并写入默认 distro。不在 WSL 内安装 Manager。
+`configure --runtime wsl --wsl-distro <name>` 也会自动启用 WSL 支持并写入默认 distro。不在 WSL 内安装 Manager。未显式指定 distro 时，Manager 会自动忽略 Docker Desktop / Rancher Desktop / Podman 等工具注册的辅助发行版（`docker-desktop*`、`rancher-desktop*`、`podman-machine-*`），并按“已配置 distro → 唯一普通发行版 → WSL 默认发行版 → 唯一运行中的发行版 → 已知发行版评分”的顺序自动选择。因此同时安装 Ubuntu 与 Docker Desktop 时，可直接点击托盘菜单的“启动并打开WSL DSH”；只有存在多个普通发行版且无法可靠判断时，才需要 `wsl enable --distro <name>` 显式指定。
 
 `3080` 只是新实例的默认端口，并非写死。新安装可通过 `--port 4000` 指定；已有安装不会因再次执行安装命令而覆盖配置，应通过托盘菜单打开管理器配置文件，修改 `config.json` 中实例的 `PreferredPort`，然后退出并重新启动管理器。管理器会显式向 DSH 传递 `--port`。外部手动启动的 Windows/WSL DSH 可通过托盘中的检测按钮或 CLI 被发现，并在指纹验证后接管为 attached 实例。
 

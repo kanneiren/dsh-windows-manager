@@ -106,3 +106,30 @@ Reinstalling the manager replaces application files but preserves `config.json`,
 ## 8. Report a Reproducible Problem
 
 Include the manager version, DSH version, runtime type, configured and active port, two fingerprint results, sanitized error tail, and exact reproduction steps. State whether direct `Invoke-WebRequest` succeeds. Follow `SECURITY.md` for security-sensitive reports.
+
+
+## 9. WSL Distro Selection with Docker Desktop
+
+`wsl.exe --list --quiet` also lists helper distros registered by Docker Desktop, Rancher Desktop, and Podman (`docker-desktop`, `docker-desktop-data`, `rancher-desktop`, `podman-machine-*`, and similar). These are not general-purpose Linux environments and cannot run DSH.
+
+The Manager filters them out and auto-selects a general-purpose distro in this order:
+
+1. explicitly configured distro,
+2. the only remaining general-purpose distro,
+3. the WSL default distro,
+4. the only running distro,
+5. the best-known distribution by score.
+
+Typical result on a machine with Docker Desktop and Ubuntu:
+
+```text
+Detected: docker-desktop, Ubuntu-24.04
+Preferred: Ubuntu-24.04
+```
+
+If the tray action still reports multiple distros, run `wsl enable --distro <actual-name>` explicitly. Find the exact names with:
+
+```text
+dsh-windows-manager wsl detect
+wsl.exe --list --quiet
+```

@@ -19,4 +19,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Node named-pipe test failed.' }
 & node (Join-Path $projectRoot 'tests\cli.test.mjs')
 if ($LASTEXITCODE -ne 0) { throw 'npm CLI integration test failed.' }
 
-[pscustomobject]@{ Build = 'PASS'; CSharp = 'PASS'; RuntimeBridge = 'PASS'; NpmCli = 'PASS'; Integration = if ($SkipIntegration) { 'SKIPPED' } else { 'PASS' } }
+& node (Join-Path $projectRoot 'tests\wsl-distro-selection.test.mjs')
+if ($LASTEXITCODE -ne 0) { throw 'WSL distro selection test failed.' }
+
+[pscustomobject]@{ Build = 'PASS'; CSharp = 'PASS'; RuntimeBridge = 'PASS'; NpmCli = 'PASS'; WslDistroSelection = 'PASS'; Integration = if ($SkipIntegration) { 'SKIPPED' } else { 'PASS' } }

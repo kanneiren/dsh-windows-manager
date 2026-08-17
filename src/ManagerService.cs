@@ -266,9 +266,15 @@ namespace DeepSeekHarnessManager
                 if (String.IsNullOrWhiteSpace(distro))
                 {
                     List<string> distros = WslRuntimeAdapter.DetectDistros();
-                    if (distros.Count == 1) distro = distros[0];
-                    else if (distros.Count == 0) throw new InvalidOperationException("No WSL distros were detected.");
-                    else throw new InvalidOperationException("Multiple WSL distros were detected. Run dsh-windows-manager wsl enable --distro <name> first.");
+                    distro = WslRuntimeAdapter.SelectPreferredDistro(null, distros, WslRuntimeAdapter.DetectDistroStates());
+                    if (String.IsNullOrWhiteSpace(distro))
+                    {
+                        if (distros.Count == 0) throw new InvalidOperationException("No WSL distros were detected.");
+                        List<string> candidates = WslRuntimeAdapter.GetUserWslDistros(distros);
+                        if (candidates.Count == 0)
+                            throw new InvalidOperationException("WSL only reports container-runtime distros (" + String.Join(", ", distros.ToArray()) + "). Install a general-purpose WSL distribution such as Ubuntu, then try again.");
+                        throw new InvalidOperationException("Multiple WSL distros were detected (" + String.Join(", ", candidates.ToArray()) + "). Run dsh-windows-manager wsl enable --distro <name> first.");
+                    }
                 }
                 int port = ChooseWslPreferredPort();
                 PluginDefinition plugin = null;
@@ -395,7 +401,10 @@ namespace DeepSeekHarnessManager
             }
             if (distros.Count == 0)
             {
-                foreach (string distro in WslRuntimeAdapter.DetectDistros()) distros.Add(distro);
+                foreach (string distro in WslRuntimeAdapter.DetectDistros())
+                {
+                    if (WslRuntimeAdapter.IsUserWslDistro(distro)) distros.Add(distro);
+                }
             }
             WslRuntimeAdapter adapter = new WslRuntimeAdapter();
             foreach (string distro in distros)

@@ -129,7 +129,7 @@ dsh-windows-manager wsl status --json
 dsh-windows-manager wsl disable
 ```
 
-`configure --runtime wsl --wsl-distro <name>` also enables WSL support and stores the default distro. No Manager software is installed inside WSL.
+`configure --runtime wsl --wsl-distro <name>` also enables WSL support and stores the default distro. No Manager software is installed inside WSL. When no distro is configured explicitly, the Manager ignores helper distros registered by Docker Desktop, Rancher Desktop, or Podman (`docker-desktop*`, `rancher-desktop*`, `podman-machine-*`) and auto-selects in this order: configured distro, the only general-purpose distro, the WSL default distro, the only running distro, or the best-known distribution by score. With Ubuntu and Docker Desktop installed, the tray `Open or start WSL DSH` action just works; an explicit `wsl enable --distro <name>` is required only when several general-purpose distros cannot be disambiguated.
 
 `3080` is only the default port for new instances; it is not hardcoded. For a new installation, use `--port 4000` to select another port. Re-running the installation command does not overwrite the configuration of an existing installation. Instead, open the manager configuration file from the tray menu, edit the instance's `PreferredPort` in `config.json`, then exit and restart the manager. The manager explicitly passes `--port` to DSH. Manually started Windows or WSL DSH processes can be discovered through the tray detection buttons or CLI and adopted as attached instances after fingerprint verification.
 
