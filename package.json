@@ -1,11 +1,12 @@
 {
   "name": "dsh-windows-manager",
-  "version": "0.3.0",
-  "description": "Install and control the DeepSeek Harness Manager Windows tray application.",
+  "version": "0.3.1",
+  "description": "Install and control DeepSeek Harness on Windows and WSL2 from a native Windows tray application.",
   "keywords": [
     "deepseek",
     "harness",
     "windows",
+    "wsl2",
     "tray",
     "manager"
   ],

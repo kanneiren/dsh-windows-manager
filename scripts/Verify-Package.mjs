@@ -23,6 +23,8 @@ const required = [
   'dist/docs/FEATURES.md',
   'dist/docs/TROUBLESHOOTING.md',
   'dist/docs/PERFORMANCE.md',
+  'dist/docs/USAGE.md',
+  'dist/docs/USAGE.zh-CN.md',
   'dist/locales/en-US.json',
   'dist/locales/zh-CN.json',
   'dist/plugins/deepseek-harness-web/plugin.json',
@@ -34,6 +36,8 @@ const required = [
   'scripts/Uninstall.ps1',
   'README.md',
   'README.en.md',
+  'docs/USAGE.md',
+  'docs/USAGE.zh-CN.md',
   'SECURITY.en.md',
   'CONTRIBUTING.en.md'
 ];

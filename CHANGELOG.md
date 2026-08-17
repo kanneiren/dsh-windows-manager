@@ -2,11 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
-## Unreleased
+## 0.3.1
 
 ### Fixed
 
 - WSL distro auto-selection ignores Docker Desktop, Rancher Desktop, and Podman helper distros and prefers the configured, default, running, or best-known general-purpose distro, so `Open or start WSL DSH` works when Docker Desktop is installed.
+
+### Documentation
+
+- Slimmed both READMEs to a Windows/WSL2 scenario-focused overview and quick start; detailed installation, usage, update, and operations content moved to `docs/USAGE.md` and `docs/USAGE.zh-CN.md`.
 
 ## 0.3.0
 
