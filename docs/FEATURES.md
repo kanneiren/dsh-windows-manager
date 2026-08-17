@@ -34,7 +34,7 @@
 
 ## User Entry Points
 
-The desktop shortcut performs `open`: it adopts and opens a verified running instance or starts the default instance and waits for readiness.
+The default Start Menu shortcut performs `tray`: it opens only the Manager notification-area icon without starting DSH. An opt-in desktop shortcut uses the same action. `open` remains available from the tray menu and CLI when the user explicitly wants DSH plus the Web UI.
 
 The tray menu exposes all instance operations. With multiple instances, each instance has a named submenu.
 

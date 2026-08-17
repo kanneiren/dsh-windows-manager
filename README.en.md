@@ -10,7 +10,7 @@
 
 ## Use Cases
 
-- **Native Windows**: npm global, pinned npx, and Git source runtimes; double-click the desktop shortcut to start and open the DSH Web UI.
+- **Native Windows**: npm global, pinned npx, and Git source runtimes; the Start Menu/desktop shortcut opens only the tray, and the Web UI is started from the tray menu or CLI.
 - **WSL2 Linux**: the Manager stays on Windows while DSH runs in the selected WSL2 distro. Helper distros from Docker Desktop / Rancher Desktop / Podman are ignored automatically, and a general-purpose distro such as Ubuntu or Debian is selected without installing anything inside WSL.
 - **Tray resident**: closing the browser does not stop DSH; the tray menu offers open, start/stop, status, updates, logs, and language switching.
 - **Multiple instances**: Windows and WSL instances can coexist, each with its own port, state, and lifecycle.

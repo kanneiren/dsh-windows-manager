@@ -10,7 +10,7 @@
 
 ## 使用场景
 
-- **Windows 原生**：支持 npm 全局安装、固定版本 npx 和 Git 源码三种运行方式；双击桌面快捷方式即可启动并打开 DSH Web UI。
+- **Windows 原生**：支持 npm 全局安装、固定版本 npx 和 Git 源码三种运行方式；开始菜单/桌面快捷方式只打开托盘，由托盘菜单或 CLI 启动并打开 DSH Web UI。
 - **WSL2 Linux**：Manager 仍运行在 Windows，DSH 运行在 WSL2 发行版中；自动忽略 Docker Desktop / Rancher Desktop / Podman 等辅助发行版，并选择 Ubuntu、Debian 等普通发行版，无需在 WSL 内安装 Manager。
 - **托盘常驻**：关闭浏览器不会结束 DSH；托盘菜单提供打开、启停、状态、更新、日志和语言切换。
 - **多实例**：Windows 与 WSL 实例可同时配置，每个实例拥有独立端口、状态与生命周期。

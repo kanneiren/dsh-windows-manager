@@ -32,7 +32,7 @@ Application files are installed under:
 
 This directory contains the EXE, `.exe.config`, assets, locales, plugin manifests, the Cordis bridge, license, and user documentation. It intentionally excludes source code, tests, and build tools.
 
-The EXE embeds the base whale icon. The runtime assets directory contains five small tray-state ICO files plus a separate whale-based manager icon for the desktop shortcut; source PNG and SVG files remain in the repository as source references but are not published in the runtime payload.
+The EXE embeds the base whale icon. The runtime assets directory contains five small tray-state ICO files plus a separate whale-based manager icon for the Start Menu/desktop shortcuts; source PNG and SVG files remain in the repository as source references but are not published in the runtime payload.
 
 Mutable data is stored separately:
 
@@ -106,7 +106,7 @@ dsh-windows-manager configure
 dsh-windows-manager configure --runtime windows --frontend web --tray true --shortcut false --autostart true
 ```
 
-The CLI edits `config.json` in place and preserves unknown fields. `--runtime` sets the default instance `RuntimeType`; `--frontend` sets `Frontend`; `--tray` sets `TrayEnabled`; `--shortcut` creates/removes the desktop shortcut; `--autostart` updates the per-user Run key only when explicitly requested. `--wsl-distro` enables and selects a WSL distro for `--runtime wsl`.
+The CLI edits `config.json` in place and preserves unknown fields. `--runtime` sets the default instance `RuntimeType`; `--frontend` sets `Frontend`; `--tray` sets `TrayEnabled`; `--shortcut` creates/removes the opt-in desktop shortcut while `install` manages the always-searchable Start Menu shortcut; `--autostart` updates the per-user Run key with the `tray` action only when explicitly requested. `--wsl-distro` enables and selects a WSL distro for `--runtime wsl`.
 
 WSL is disabled by default. The CLI exposes explicit on-demand commands:
 
