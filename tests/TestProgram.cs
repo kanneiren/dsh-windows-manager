@@ -53,7 +53,9 @@ namespace DeepSeekHarnessManager.Tests
                 Run("tcp bridge connection", TestTcpBridgeConnection);
                 Run("log retention", TestLogRetention);
                 Run("npm update check", TestUpdateCheck);
+                Run("npm dist-tag resolution", TestRegistryDistTagResolution);
                 Run("update rollback transaction", TestUpdateRollbackTransaction);
+                Run("confirmed update refresh", TestConfirmedUpdateRefresh);
                 Run("existing DSH adoption", TestExistingHarnessAdoption);
                 if (Array.IndexOf(args, "--integration") >= 0)
                 {
@@ -578,7 +580,7 @@ namespace DeepSeekHarnessManager.Tests
             instance.Runtime = "global";
             RuntimeResolution global = RuntimeResolver.Resolve(instance, plugin, 3080, String.Empty);
             Assert(File.Exists(global.CommandPath), "global dsh command not found");
-            Assert(global.Version == "0.1.0-rc.6", "unexpected global version: " + global.Version);
+            Assert(global.Version == plugin.Update.BundledVersion, "unexpected global version: " + global.Version);
 
             string fakeSource = Path.Combine(AppPaths.DataDirectory, "fake-source");
             Directory.CreateDirectory(Path.Combine(fakeSource, ".git"));
@@ -592,9 +594,9 @@ namespace DeepSeekHarnessManager.Tests
             Assert(source.Arguments[0] == "dsh", "source runtime must invoke pnpm dsh");
 
             instance.Runtime = "npx";
-            instance.PinnedVersion = "0.1.0-rc.6";
+            instance.PinnedVersion = plugin.Update.BundledVersion;
             RuntimeResolution npx = RuntimeResolver.Resolve(instance, plugin, 3082, String.Empty);
-            Assert(npx.Arguments.Contains("@deepseek-ai/dsh@0.1.0-rc.6"), "npx runtime must pin the selected version");
+            Assert(npx.Arguments.Contains("@deepseek-ai/dsh@" + plugin.Update.BundledVersion), "npx runtime must pin the selected version");
         }
 
         private static void TestRuntimeAdapters()
@@ -957,6 +959,9 @@ namespace DeepSeekHarnessManager.Tests
             InstanceController sourceController = new InstanceController(sourceInstance, plugin, store);
             RuntimeResolution sourceRuntime = RuntimeResolver.Resolve(sourceInstance, plugin, 3082, String.Empty);
             bool resetToPreviousSha = false;
+            bool fetchedFromOrigin = false;
+            bool resetToTargetSha = false;
+            int cleanCalls = 0;
             int sourceSmokeCalls = 0;
             int sourceShaReads = 0;
             string previousSha = "1234567890abcdef1234567890abcdef12345678";
@@ -971,7 +976,14 @@ namespace DeepSeekHarnessManager.Tests
                         sourceShaReads++;
                         return new CommandResult { ExitCode = 0, StandardOutput = (sourceShaReads == 1 ? previousSha : updatedSha) + Environment.NewLine };
                     }
-                    if (commandArgs.Contains("reset") && commandArgs.Contains(previousSha)) resetToPreviousSha = true;
+                    if (commandArgs.Contains("fetch") && commandArgs.Contains("origin")) fetchedFromOrigin = true;
+                    if (commandArgs.Contains("reset"))
+                    {
+                        string sha = commandArgs[commandArgs.Count - 1];
+                        if (sha == previousSha) resetToPreviousSha = true;
+                        else if (sha == "abcdef12") resetToTargetSha = true;
+                    }
+                    if (commandArgs.Contains("clean")) cleanCalls++;
                     return new CommandResult { ExitCode = 0, StandardOutput = String.Empty, StandardError = String.Empty };
                 },
                 delegate(InstanceConfig instance, PluginDefinition definition, ConfigurationStore configurationStore, string expectedVersion, string runtimeId)
@@ -984,6 +996,9 @@ namespace DeepSeekHarnessManager.Tests
             UpdateOutcome sourceOutcome = sourceUpdates.ExecuteTransaction(sourceRuntime, sourceController, "abcdef12");
             Assert(sourceOutcome.RollbackSucceeded, "clean source checkout should roll back after failed compatibility testing");
             Assert(resetToPreviousSha, "source rollback did not reset to the recorded previous commit");
+            Assert(fetchedFromOrigin, "source update must fetch the upstream branch before pinning the checked commit");
+            Assert(resetToTargetSha, "source update must reset to the exact checked commit");
+            Assert(cleanCalls >= 2, "source update and rollback must remove untracked build output");
 
             UpdateManager failedRollback = new UpdateManager(
                 store,
@@ -995,6 +1010,120 @@ namespace DeepSeekHarnessManager.Tests
             string[] journals = Directory.GetFiles(AppPaths.UpdateDirectory, "*.journal.json");
             Assert(journals.Length == 1, "failed rollback should preserve one recovery journal");
             foreach (string journal in journals) File.Delete(journal);
+        }
+
+        private static void TestRegistryDistTagResolution()
+        {
+            string url = UpdateManager.BuildDistTagsUrl("https://registry.npmjs.org/@deepseek-ai%2Fdsh/latest");
+            Assert(url == "https://registry.npmjs.org/-/package/@deepseek-ai%2Fdsh/dist-tags", "unexpected dist-tags URL: " + url);
+            Assert(UpdateManager.ResolveLatestVersion("{\"latest\":\"0.1.0-rc.7\",\"next\":\"0.1.0-rc.8\"}") == "0.1.0-rc.8", "the newer next tag must win");
+            Assert(UpdateManager.ResolveLatestVersion("{\"latest\":\"1.0.0\",\"next\":\"0.9.5\"}") == "1.0.0", "the newer latest tag must win");
+            Assert(UpdateManager.ResolveLatestVersion("{\"latest\":\"1.0.0\"}") == "1.0.0", "latest alone must resolve");
+            Assert(UpdateManager.ResolveLatestVersion("{\"latest\":\"1.0.0-rc.1\",\"next\":\"1.0.0\"}") == "1.0.0", "a release must outrank its prerelease");
+            bool threw = false;
+            try { UpdateManager.ResolveLatestVersion("{\"beta\":\"1.0.0\"}"); }
+            catch (System.IO.InvalidDataException) { threw = true; }
+            Assert(threw, "a dist-tags response without latest or next must fail the check");
+        }
+
+        private sealed class ScriptedCheckUpdateManager : UpdateManager
+        {
+            public UpdateInfo Result;
+            public Exception Failure;
+            public int ForcedChecks;
+
+            public ScriptedCheckUpdateManager(ConfigurationStore store, ManagerConfig config, IManagerInteraction managerInteraction)
+                : base(store, config, managerInteraction, CommandRunner.RunCapture, RuntimeSmokeTest.Run)
+            {
+            }
+
+            public override UpdateInfo Check(InstanceController controller, bool force)
+            {
+                if (!force) throw new InvalidOperationException("the confirmed-update refresh must force a fresh check");
+                ForcedChecks++;
+                if (Failure != null) throw Failure;
+                return Result;
+            }
+        }
+
+        private static void TestConfirmedUpdateRefresh()
+        {
+            Localization.Initialize("en-US");
+            PluginCatalog catalog = PluginCatalog.Load();
+            PluginDefinition plugin = catalog.Get("deepseek-harness-web");
+            ConfigurationStore store = new ConfigurationStore(catalog);
+            ManagerConfig config = new ManagerConfig();
+            config.SchemaVersion = 1;
+            config.Language = "auto";
+            InstanceConfig instance = CreateInstance(plugin, 3095);
+            instance.Id = "refresh";
+            instance.Runtime = "npx";
+            config.DefaultInstanceId = instance.Id;
+            config.Instances = new List<InstanceConfig> { instance };
+            store.Save(config);
+            InstanceController controller = new InstanceController(instance, plugin, store);
+            controller.UpdateInfo = new UpdateInfo
+            {
+                InstalledVersion = "1.0.0",
+                LatestVersion = "1.1.0",
+                UpdateAvailable = true,
+                Detail = "Update available",
+                CheckedAtUtc = DateTime.UtcNow
+            };
+            RecordingInteraction interaction = new RecordingInteraction();
+            ScriptedCheckUpdateManager updates = new ScriptedCheckUpdateManager(store, config, interaction);
+
+            updates.Result = new UpdateInfo
+            {
+                InstalledVersion = "1.0.0",
+                LatestVersion = "2.0.0",
+                UpdateAvailable = true,
+                Detail = "Update available",
+                CheckedAtUtc = DateTime.UtcNow
+            };
+            bool moved = updates.ExecuteConfirmedUpdate(controller);
+            Assert(!moved, "a declined confirmation must not install anything");
+            Assert(updates.ForcedChecks == 1, "the confirmed update must refresh the check target (checks=" + updates.ForcedChecks
+                + ", errors=" + interaction.ErrorCount + ", infos=" + interaction.InformationCount + ", confirms=" + interaction.ConfirmCount + ")");
+            Assert(interaction.ConfirmCount == 1, "exactly one confirmation is expected");
+            Assert(interaction.LastConfirmMessage != null && interaction.LastConfirmMessage.IndexOf("2.0.0", StringComparison.Ordinal) >= 0,
+                "the confirmation must show the refreshed target version: " + interaction.LastConfirmMessage);
+            Assert(controller.UpdateInfo != null && controller.UpdateInfo.LatestVersion == "2.0.0", "the instance update state must reflect the refreshed check");
+
+            updates.ForcedChecks = 0;
+            updates.Result = new UpdateInfo
+            {
+                InstalledVersion = "2.0.0",
+                LatestVersion = "2.0.0",
+                UpdateAvailable = false,
+                Detail = "Up to date",
+                CheckedAtUtc = DateTime.UtcNow
+            };
+            bool none = updates.ExecuteConfirmedUpdate(controller);
+            Assert(!none, "a vanished update must not install anything");
+            Assert(updates.ForcedChecks == 1, "no-update refresh (checks=" + updates.ForcedChecks
+                + ", errors=" + interaction.ErrorCount + ", infos=" + interaction.InformationCount + ", confirms=" + interaction.ConfirmCount + ")");
+            Assert(interaction.ConfirmCount == 1, "no confirmation is expected when the refresh reports no update");
+            Assert(interaction.InformationCount == 1, "the user must be told that no update remains");
+            Assert(controller.UpdateInfo != null && !controller.UpdateInfo.UpdateAvailable, "the instance update state must reflect the fresh result");
+
+            updates.ForcedChecks = 0;
+            controller.UpdateInfo = new UpdateInfo
+            {
+                InstalledVersion = "1.0.0",
+                LatestVersion = "2.0.0",
+                UpdateAvailable = true,
+                Detail = "Update available",
+                CheckedAtUtc = DateTime.UtcNow
+            };
+            updates.Failure = new InvalidOperationException("registry unreachable");
+            bool failed = updates.ExecuteConfirmedUpdate(controller);
+            Assert(!failed, "a failed refresh must not install anything");
+            Assert(updates.ForcedChecks == 1, "failed refresh (checks=" + updates.ForcedChecks
+                + ", errors=" + interaction.ErrorCount + ", infos=" + interaction.InformationCount + ", confirms=" + interaction.ConfirmCount + ")");
+            Assert(interaction.ConfirmCount == 1, "no confirmation is expected when the refresh fails");
+            Assert(interaction.ErrorCount == 1, "the refresh failure must be reported to the user");
+            Assert(controller.UpdateInfo != null && controller.UpdateInfo.UpdateAvailable, "a failed refresh must keep the previously known update state");
         }
 
         private static void TestWslRuntimeResolutionKinds()
@@ -1328,6 +1457,7 @@ namespace DeepSeekHarnessManager.Tests
             public int WarningCount;
             public int ErrorCount;
             public int ConfirmCount;
+            public string LastConfirmMessage;
 
             public void Show(ManagerMessageKind kind, string message)
             {
@@ -1339,6 +1469,7 @@ namespace DeepSeekHarnessManager.Tests
             public bool Confirm(ManagerConfirmKind kind, string message, string title)
             {
                 ConfirmCount++;
+                LastConfirmMessage = message;
                 return false;
             }
 

@@ -8,7 +8,7 @@ using System.Web.Script.Serialization;
 
 namespace DeepSeekHarnessManager
 {
-    public sealed class UpdateManager
+    public class UpdateManager
     {
         private readonly ConfigurationStore configurationStore;
         private readonly ManagerConfig managerConfig;
@@ -62,7 +62,7 @@ namespace DeepSeekHarnessManager
             return next > DateTime.UtcNow ? next : DateTime.UtcNow.AddMinutes(1);
         }
 
-        public UpdateInfo Check(InstanceController controller, bool force)
+        public virtual UpdateInfo Check(InstanceController controller, bool force)
         {
             RuntimeResolution runtime = RuntimeAdapters.Resolve(controller.Config, controller.Plugin, controller.Config.PreferredPort, String.Empty);
             if (String.Equals(runtime.Definition.Kind, "source", StringComparison.OrdinalIgnoreCase))
@@ -85,8 +85,24 @@ namespace DeepSeekHarnessManager
                 interaction.Show(ManagerMessageKind.Error, exception.Message);
                 return false;
             }
+            UpdateInfo fresh;
+            try { fresh = Check(controller, true); }
+            catch (Exception exception)
+            {
+                interaction.Show(ManagerMessageKind.Error, Localization.Format("Update.CheckFailed", exception.Message));
+                return false;
+            }
+            if (!fresh.UpdateAvailable)
+            {
+                controller.UpdateInfo = fresh;
+                interaction.Show(ManagerMessageKind.Information, Localization.Text("Update.None"));
+                return false;
+            }
+            bool targetMoved = !String.Equals(fresh.LatestVersion, info.LatestVersion, StringComparison.Ordinal);
+            controller.UpdateInfo = fresh;
+            info = fresh;
             if (!interaction.Confirm(ManagerConfirmKind.Question,
-                Localization.Format("Update.Confirm", controller.Config.Name, info.InstalledVersion, info.LatestVersion),
+                Localization.Format(targetMoved ? "Update.TargetMoved" : "Update.Confirm", controller.Config.Name, info.InstalledVersion, info.LatestVersion),
                 Localization.Text("Update.ConfirmTitle"))) return false;
             bool wasRunning = controller.State == InstanceStateKind.Running || controller.State == InstanceStateKind.Starting || controller.State == InstanceStateKind.Stopping;
             int restartPort = controller.ActivePort > 0 ? controller.ActivePort : controller.Config.PreferredPort;
@@ -151,12 +167,7 @@ namespace DeepSeekHarnessManager
                 using (TimeoutWebClient client = new TimeoutWebClient(6000))
                 {
                     client.Headers[HttpRequestHeader.UserAgent] = "DeepSeekHarnessManager/1.0";
-                    string json = client.DownloadString(controller.Plugin.Update.RegistryUrl);
-                    JavaScriptSerializer serializer = new JavaScriptSerializer();
-                    Dictionary<string, object> value = serializer.Deserialize<Dictionary<string, object>>(json);
-                    object versionValue;
-                    if (!value.TryGetValue("version", out versionValue)) throw new InvalidDataException("The npm registry response has no version.");
-                    cache.LatestVersion = Convert.ToString(versionValue);
+                    cache.LatestVersion = ResolveLatestVersion(client.DownloadString(BuildDistTagsUrl(controller.Plugin.Update.RegistryUrl)));
                 }
                 cache.InstalledVersion = runtime.Version;
                 cache.LastSuccessAtUtc = DateTime.UtcNow.ToString("o");
@@ -183,6 +194,36 @@ namespace DeepSeekHarnessManager
             cache.Detail = info.Detail;
             JsonStore.Write(cachePath, cache);
             return info;
+        }
+
+        internal static string BuildDistTagsUrl(string registryUrl)
+        {
+            string trimmed = registryUrl.TrimEnd('/');
+            int scheme = trimmed.IndexOf("://", StringComparison.Ordinal);
+            int pathStart = trimmed.IndexOf('/', scheme < 0 ? 0 : scheme + 3);
+            if (pathStart < 0) throw new UriFormatException("The registry URL has no path: " + registryUrl);
+            string packagePath = trimmed.Substring(pathStart);
+            int last = packagePath.LastIndexOf('/');
+            if (last > 0) packagePath = packagePath.Substring(0, last);
+            return trimmed.Substring(0, pathStart) + "/-/package" + packagePath + "/dist-tags";
+        }
+
+        internal static string ResolveLatestVersion(string distTagsJson)
+        {
+            JavaScriptSerializer serializer = new JavaScriptSerializer();
+            Dictionary<string, object> tags = serializer.Deserialize<Dictionary<string, object>>(distTagsJson);
+            if (tags == null || tags.Count == 0) throw new InvalidDataException("The npm registry dist-tags response is empty.");
+            string best = null;
+            foreach (string channel in new string[] { "latest", "next" })
+            {
+                object value;
+                if (!tags.TryGetValue(channel, out value)) continue;
+                string version = Convert.ToString(value);
+                if (String.IsNullOrWhiteSpace(version)) continue;
+                if (best == null || SemanticVersion.Compare(version, best) > 0) best = version;
+            }
+            if (best == null) throw new InvalidDataException("The npm registry dist-tags response has no latest or next tag.");
+            return best;
         }
 
         private CommandResult RunCommand(InstanceController controller, string command, IList<string> arguments, string workingDirectory, int timeoutMilliseconds)
@@ -420,13 +461,22 @@ namespace DeepSeekHarnessManager
                 string git = IsWsl(controller) ? "git" : (AppPaths.FindOnPath("git.exe") ?? AppPaths.FindOnPath("git"));
                 string pnpm = IsWsl(controller) ? "pnpm" : AppPaths.FindOnPath("pnpm.cmd");
                 if (String.IsNullOrWhiteSpace(git) || String.IsNullOrWhiteSpace(pnpm)) return Failure("Git and pnpm are required for source updates.");
-                CommandResult pull = RunCommand(controller, git, new string[] { "-C", controller.Config.SourceRoot, "pull", "--ff-only" }, controller.Config.SourceRoot, 120000);
-                if (!Succeeded(pull)) return pull;
+                CommandResult fetch = RunCommand(controller, git, new string[] { "-C", controller.Config.SourceRoot, "fetch", "origin", controller.Plugin.Update.GithubBranch }, controller.Config.SourceRoot, 120000);
+                if (!Succeeded(fetch)) return fetch;
+                CommandResult reset = RunCommand(controller, git, new string[] { "-C", controller.Config.SourceRoot, "reset", "--hard", latestVersion }, controller.Config.SourceRoot, 60000);
+                if (!Succeeded(reset)) return reset;
                 CommandResult install = RunCommand(controller, pnpm, new string[] { "install", "--frozen-lockfile" }, controller.Config.SourceRoot, 300000);
                 if (!Succeeded(install)) return install;
-                return RunCommand(controller, pnpm, new string[] { "run", "build" }, controller.Config.SourceRoot, 600000);
+                CommandResult build = RunCommand(controller, pnpm, new string[] { "run", "build" }, controller.Config.SourceRoot, 600000);
+                if (!Succeeded(build)) return build;
+                return CleanUntracked(controller, git);
             }
             return Failure("Unsupported update runtime: " + runtime.Definition.Kind);
+        }
+
+        private CommandResult CleanUntracked(InstanceController controller, string git)
+        {
+            return RunCommand(controller, git, new string[] { "-C", controller.Config.SourceRoot, "clean", "-fd" }, controller.Config.SourceRoot, 60000);
         }
 
         private CommandResult ExecuteRollback(RuntimeResolution runtime, InstanceController controller, string previousPinnedVersion, string previousSourceSha, string previousVersion)
@@ -454,7 +504,9 @@ namespace DeepSeekHarnessManager
                 if (!Succeeded(reset)) return reset;
                 CommandResult install = RunCommand(controller, pnpm, new string[] { "install", "--frozen-lockfile" }, controller.Config.SourceRoot, 300000);
                 if (!Succeeded(install)) return install;
-                return RunCommand(controller, pnpm, new string[] { "run", "build" }, controller.Config.SourceRoot, 600000);
+                CommandResult build = RunCommand(controller, pnpm, new string[] { "run", "build" }, controller.Config.SourceRoot, 600000);
+                if (!Succeeded(build)) return build;
+                return CleanUntracked(controller, git);
             }
             return Failure("Unsupported rollback runtime: " + runtime.Definition.Kind);
         }

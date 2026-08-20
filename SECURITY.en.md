@@ -57,7 +57,7 @@ Configuration and logs are outside the replaceable application directory. Upgrad
 
 ## Updates and Supply Chain
 
-Automatic update checks never install code. Every update requires an explicit confirmation. npm updates select an exact version, npx instances retain a pinned version, and source updates refuse a dirty Git checkout.
+Automatic update checks never install code. Every update requires an explicit confirmation, and the confirmation flow re-checks the target immediately before installation so the user confirms a current version. npm updates select an exact version, npx instances retain a pinned version, and source updates refuse a dirty Git checkout and reset to the exact checked commit rather than whatever the branch tip happens to be at install time.
 
 After an update, a manager-owned smoke process runs on a random loopback port with an isolated DSH home. The update is accepted only after both fingerprints pass and authenticated graceful shutdown releases the port. Failure restores and re-tests the previous version. Source rollback uses the recorded commit only while the checkout remains clean; otherwise it preserves user changes and leaves a recovery journal instead of forcing a reset.
 

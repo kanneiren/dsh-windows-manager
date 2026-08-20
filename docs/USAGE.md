@@ -232,12 +232,15 @@ With multiple instances, each instance has its own submenu.
 - Git source `ls-remote` requests time out after 15 seconds.
 - Automatic checks do not retry. A failed check also enters the 24-hour cooldown to prevent repeated requests during network failures.
 - A manual `Check for updates` bypasses the cache.
+- Registry checks read the npm dist-tags document and consider both the `latest` and `next` channels, offering whichever semantic version is newer, so pre-release builds published only to `next` remain visible.
 - Updates are never installed silently and always require user confirmation.
+- After `Install available update` is chosen, the manager first repeats a forced check. The confirmation dialog shows the refreshed target and says so when it changed since the last check; if no update remains, nothing is installed.
 - A global npm installation runs `npm install --global` for the exact target version.
 - An npx installation updates only the pinned version in the configuration.
-- A source installation runs `git pull --ff-only`, `pnpm install --frozen-lockfile`, and `pnpm run build` only when the Git working tree is clean.
+- A source installation runs `git fetch origin <branch>`, `git reset --hard` to the exact checked commit, `pnpm install --frozen-lockfile`, and `pnpm run build` only when the Git working tree is clean.
 - After an update, the manager uses a random local port and an isolated `DSH_HOME` to start DSH with the actual runtime arguments, verifies both HTTP and process fingerprints, and then shuts it down gracefully through Cordis.
 - A failed compatibility test triggers a rollback followed by another verification: global npm restores the exact previous version, npx restores the previous pinned version, and a source installation restores the previous commit and rebuilds only if the working tree is still clean.
+- Source updates and rollbacks remove untracked build output (`git clean -fd`) after building so generated files never block the clean-tree check of the next update.
 - Update transactions are written to `%LOCALAPPDATA%\DeepSeekHarnessManager\updates`. Logs are deleted only after the updated or restored version passes verification; they are retained for troubleshooting if rollback fails.
 
 ## Background Performance

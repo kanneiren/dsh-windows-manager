@@ -232,12 +232,15 @@ powershell.exe -ExecutionPolicy Bypass -File .\scripts\Install.ps1 `
 - Git 源码 `ls-remote` 超时 15 秒。
 - 自动检查不重试，失败也进入 24 小时冷却，避免网络异常时反复请求。
 - 手动 `Check for updates` 会绕过缓存。
+- Registry 检查读取 npm dist-tags 文档，同时考虑 `latest` 与 `next` 通道并取语义版本较高者，因此只发布到 `next` 的预发布版本也能被发现。
 - 更新绝不静默执行，必须由用户确认。
+- 点击 `Install available update` 后，管理器会先强制重新检查一次。确认框展示刷新后的目标，并在目标与上次检查不同时明确提示；若已无可用更新则不会安装任何内容。
 - npm 全局版执行固定目标版本的 `npm install --global`。
 - npx 版只更新配置中的固定版本。
-- 源码版仅在 Git 工作区干净时执行 `git pull --ff-only`、`pnpm install --frozen-lockfile` 和 `pnpm run build`。
+- 源码版仅在 Git 工作区干净时执行 `git fetch origin <branch>`、`git reset --hard` 到检查到的确切提交、`pnpm install --frozen-lockfile` 和 `pnpm run build`。
 - 更新后会使用随机本地端口和隔离的 `DSH_HOME`，按真实运行参数启动 DSH，验证 HTTP/进程双指纹，再通过 Cordis 优雅关闭。
 - 兼容性测试失败会触发回滚并再次验证：全局 npm 恢复精确旧版本，npx 恢复旧固定版本，源码仅在工作区仍干净时恢复旧提交并重建。
+- 源码更新与回滚在构建后清理未跟踪构建产物（`git clean -fd`），确保生成文件不会阻塞下一次更新的干净检查。
 - 更新事务写入 `%LOCALAPPDATA%\DeepSeekHarnessManager\updates`；只有更新或已恢复版本验证成功后才删除日志，回滚失败时保留供排查。
 
 ## 常驻性能

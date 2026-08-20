@@ -8,7 +8,6 @@
   "Probe": {
     "UrlTemplate": "http://127.0.0.1:{port}/",
     "Markers": [
-      "<title>DeepSeek Harness</title>",
       "__DSH_BOOT__"
     ]
   },
@@ -101,7 +100,7 @@
     "ReleaseUrl": "https://github.com/deepseek-ai/deepseek-harness/releases",
     "GithubRepository": "deepseek-ai/deepseek-harness",
     "GithubBranch": "master",
-    "BundledVersion": "0.1.0-rc.6"
+    "BundledVersion": "0.1.0-rc.8"
   },
   "RuntimeBridge": {
     "Enabled": true,

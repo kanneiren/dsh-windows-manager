@@ -312,11 +312,11 @@ Exit closes only the tray manager. It intentionally leaves DSH running so a late
 
 ## Updates
 
-Automatic checks are network reads only. Their result and actual attempt time are cached for 24 hours. A manual check bypasses the cache and resets the next automatic deadline.
+Automatic checks are network reads only. Their result and actual attempt time are cached for 24 hours. A manual check bypasses the cache and resets the next automatic deadline. Registry checks read the npm dist-tags document and take the newer of the `latest` and `next` channels, so pre-release builds published only to `next` are still offered. Source checks compare the checkout HEAD against the upstream branch tip from `git ls-remote`.
 
-Update execution always requires confirmation. Global npm updates install an exact selected version, npx updates change the configured pinned version, and source updates require a clean Git checkout before fast-forward pull, dependency installation, and build.
+Update execution always requires confirmation, and the confirmation flow starts with another forced check so the offered target is current. Global npm updates install an exact selected version, npx updates change the configured pinned version, and source updates require a clean Git checkout, then fetch the upstream branch, reset to the exact checked commit, install dependencies, build, and remove untracked build output.
 
-Every update is a transaction. The manager records the old version or source commit, applies the change, then starts the resolved runtime on a random loopback port with an isolated DSH home. Success requires HTTP and process fingerprints followed by authenticated Cordis shutdown. A failed update or smoke test rolls back and smoke-tests the restored runtime. Global npm restores the exact old version, npx restores its old pin, and source resets to the recorded commit only if the checkout remains clean. A failed rollback leaves a journal under the update data directory.
+Every update is a transaction. The manager records the old version or source commit, applies the change, then starts the resolved runtime on a random loopback port with an isolated DSH home. Success requires HTTP and process fingerprints followed by authenticated Cordis shutdown. A failed update or smoke test rolls back and smoke-tests the restored runtime. Global npm restores the exact old version, npx restores its old pin, and source resets to the recorded commit only if the checkout remains clean; both source update and rollback finish with `git clean -fd` so generated files never block the next clean-tree precheck. A failed rollback leaves a journal under the update data directory.
 
 ## Diagnostics
 

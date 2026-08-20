@@ -43,6 +43,7 @@
   "Update.CheckFailed": "Update check failed.\r\n\r\n{0}",
   "Update.None": "No newer version is currently available.",
   "Update.Confirm": "Update {0} from {1} to {2}?\r\n\r\nRunning instances must stop first. The update will not run silently.",
+  "Update.TargetMoved": "The available version changed since the last check.\r\n\r\nUpdate {0} from {1} to {2}?\r\n\r\nRunning instances must stop first. The update will not run silently.",
   "Update.ConfirmTitle": "DeepSeek Harness Manager - Confirm update",
   "Update.ProgressTitle": "Updating DeepSeek Harness",
   "Update.Progress": "Updating, testing compatibility, and rolling back if required. Please wait...",

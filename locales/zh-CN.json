@@ -43,6 +43,7 @@
   "Update.CheckFailed": "检查更新失败。\r\n\r\n{0}",
   "Update.None": "当前没有可用的新版本。",
   "Update.Confirm": "将 {0} 从 {1} 更新至 {2}？\r\n\r\n必须先停止正在运行的实例，更新不会静默执行。",
+  "Update.TargetMoved": "自上次检查后可用版本已变化。\r\n\r\n将 {0} 从 {1} 更新至 {2}？\r\n\r\n必须先停止正在运行的实例，更新不会静默执行。",
   "Update.ConfirmTitle": "DeepSeek Harness 管理器 - 确认更新",
   "Update.ProgressTitle": "正在更新 DeepSeek Harness",
   "Update.Progress": "正在更新并测试兼容性，必要时会自动回滚，请稍候...",

@@ -19,7 +19,7 @@
 | Multi-instance | Independent menu, status, port, workspace, runtime, and optional DSH home |
 | Configuration | Separate menu actions for manager `config.json` and each instance's DSH settings directory |
 | Shutdown | Authenticated versioned DSH IPC bridge (`ping`/`getStatus`/`getRuntimeInfo`/`shutdown`) and guarded manual termination fallback |
-| Updates | 24-hour checks, confirmed installation, isolated compatibility smoke test, and verified rollback |
+| Updates | 24-hour checks across the npm `latest` and `next` dist-tags, confirmed installation against a freshly re-checked target, isolated compatibility smoke test, and verified rollback |
 | Performance | Event-driven process and IPC monitoring for Manager-owned DSH; fallback WMI/HTTP probes only when the bridge is unavailable |
 | Languages | English, Simplified Chinese, and startup-time Windows language selection |
 | Tray optional | `TrayEnabled=false` keeps the same EXE running Core + Supervisor + Runtime Bridge + Manager Control API without a tray icon |
