@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.4.0
+
+### Added
+
+- Tray `Diagnose port residue` action classifies an unavailable port on demand as stale manager state, a leftover DSH-related process, WSL port-forwarding residue, or an external process, then offers confirmed, immediately revalidated repairs: reset the manager state, clear the leftover process and restart on the original port, restart the distro (consequence labeled), or switch to an alternate port that skips other configured instances.
+
+### Changed
+
+- Registry update checks read the npm dist-tags document and offer the newer of the `latest` and `next` channels, so pre-releases published only to `next` remain visible.
+- A confirmed update re-checks the target immediately; the confirmation dialog shows the refreshed version and says so when it moved since the last check, and nothing installs when no update remains.
+- Source updates fetch the upstream branch and reset to the exact checked commit instead of `git pull --ff-only`, and both the update and the rollback remove untracked build output (`git clean -fd`) so generated files never block the next clean-tree precheck.
+- The HTTP fingerprint relies on the served `__DSH_BOOT__` marker only, which DSH source builds also serve; the page title differs between official and source builds.
+
+### Fixed
+
+- DSH 0.1.1 compatibility: the runtime-bridge `--patch` argument is now placed before the profile alias (DSH 0.1.1 rejects launcher flags after `--profile web`), and every web launch passes `--no-open` so the manager keeps owning frontend opening and npx-wrapped launches no longer hang on the default-browser handoff.
+- Track bundled DSH 0.1.1-rc.1.
+
 ## 0.3.2
 
 ### Changed
