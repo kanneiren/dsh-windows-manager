@@ -599,6 +599,16 @@ namespace DeepSeekHarnessManager.Tests
             instance.PinnedVersion = plugin.Update.BundledVersion;
             RuntimeResolution npx = RuntimeResolver.Resolve(instance, plugin, 3082, String.Empty);
             Assert(npx.Arguments.Contains("@deepseek-ai/dsh@" + plugin.Update.BundledVersion), "npx runtime must pin the selected version");
+
+            RuntimeResolution patched = RuntimeResolver.Resolve(instance, plugin, 3083, Path.Combine(AppPaths.DataDirectory, "fake.patch.yml"));
+            int patchIndex = patched.Arguments.IndexOf("--patch");
+            int profileIndex = patched.Arguments.IndexOf("--profile");
+            Assert(patchIndex >= 0 && profileIndex > patchIndex, "--patch must precede --profile for DSH 0.1.1 launcher parsing, got " + String.Join(" ", patched.Arguments.ToArray()));
+            Assert(patched.Arguments.Contains("--no-open"), "web launches must pass --no-open so the manager owns browser opening");
+
+            string wslCommand = WslRuntimeAdapter.BuildShellCommand("dsh", "web", 3092, "/tmp/bridge.patch.yml");
+            Assert(wslCommand.IndexOf("--patch") >= 0 && wslCommand.IndexOf("--profile") > wslCommand.IndexOf("--patch"), "WSL launch must put --patch before --profile: " + wslCommand);
+            Assert(wslCommand.IndexOf("--no-open") >= 0, "WSL launch must pass --no-open: " + wslCommand);
         }
 
         private static void TestRuntimeAdapters()

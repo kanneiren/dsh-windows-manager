@@ -64,12 +64,15 @@ namespace DeepSeekHarnessManager
 
                 List<string> arguments = new List<string>();
                 AddExpanded(arguments, definition.PrefixArguments, context);
-                AddExpanded(arguments, definition.LauncherArguments, context);
+                // DSH 0.1.1 parses launcher-owned flags only before the
+                // profile alias; everything after --profile web belongs to
+                // the web app.
                 if (!String.IsNullOrWhiteSpace(patchPath))
                 {
                     arguments.Add("--patch");
                     arguments.Add(patchPath);
                 }
+                AddExpanded(arguments, definition.LauncherArguments, context);
                 AddExpanded(arguments, definition.ApplicationArguments, context);
 
                 RuntimeResolution resolution = new RuntimeResolution();

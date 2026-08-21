@@ -302,7 +302,7 @@ The plugin never restarts, updates, rolls back, or supervises DSH: if DSH crashe
 
 ## Lifecycle Flows
 
-Open first prefers an authoritative bridge inspection when available; otherwise it probes the configured and persisted port. A verified running DSH is adopted and opened. Otherwise the manager resolves a runtime, creates the per-launch patch, starts DSH, connects the bridge, waits for the `ready` event or the startup fallback inspection, records PID and port, and opens the browser.
+Open first prefers an authoritative bridge inspection when available; otherwise it probes the configured and persisted port. A verified running DSH is adopted and opened. Otherwise the manager resolves a runtime, creates the per-launch patch, starts DSH (launcher flags first — `--patch` before the profile alias — plus `--no-open`, as DSH 0.1.1 requires and so the manager owns opening the frontend), connects the bridge, waits for the `ready` event or the startup fallback inspection, records PID and port, and opens the browser.
 
 Readiness waits for up to 90 seconds after an explicit open or start request. Cleanup on timeout is limited to a process launched by that manager operation; an externally launched DSH is left running for the user to diagnose.
 

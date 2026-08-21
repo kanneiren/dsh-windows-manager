@@ -252,7 +252,9 @@ Manager Control Pipe 请求即时响应。由管理器启动并已连接 DSH IPC
 
 ## 优雅关闭
 
-管理器启动 DSH 时追加一个动态 `--patch`，加载 `windows-lifecycle.mjs`：
+管理器启动 DSH 时传入动态 `--patch`，加载 `windows-lifecycle.mjs`。自 DSH 0.1.1 起，`--patch` 等启动器参数必须放在 `--profile` 别名之前；同时所有受管启动都带 `--no-open`，打开页面始终由管理器负责（npx 包装下 DSH 自行打开默认浏览器会导致启动挂起）：
+
+`dsh --patch <单次启动补丁> --profile web --no-open --host 127.0.0.1 --port <端口>`
 
 当前桥已从单用途关闭通道升级为版本化运行时协议：管理器保持一条认证 IPC 连接，可调用 `ping`、`getStatus`、`getRuntimeInfo` 和 `shutdown`，并接收 `ready`、`stopping`、`exiting` 事件。`getStatus`/`getRuntimeInfo` 返回 DSH 进程内部可获得的 PID、实际监听端口、DSH 版本、profile 和 DSH home，不会用外部猜测值伪造状态。
 

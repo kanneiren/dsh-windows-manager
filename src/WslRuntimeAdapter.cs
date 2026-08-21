@@ -381,19 +381,21 @@ namespace DeepSeekHarnessManager
             return "wsl.exe";
         }
 
-        private static string BuildShellCommand(string launchCommand, string profile, int port, string patchPath)
+        internal static string BuildShellCommand(string launchCommand, string profile, int port, string patchPath)
         {
             StringBuilder command = new StringBuilder();
             command.Append("exec ");
             command.Append(launchCommand);
-            command.Append(" --profile ");
-            command.Append(BashQuote(profile));
+            // DSH 0.1.1 parses launcher-owned flags only before the profile
+            // alias; everything after --profile web belongs to the web app.
             if (!String.IsNullOrWhiteSpace(patchPath))
             {
                 command.Append(" --patch ");
                 command.Append(BashQuote(patchPath));
             }
-            command.Append(" --host 127.0.0.1 --port ");
+            command.Append(" --profile ");
+            command.Append(BashQuote(profile));
+            command.Append(" --no-open --host 127.0.0.1 --port ");
             command.Append(port.ToString(System.Globalization.CultureInfo.InvariantCulture));
             return command.ToString();
         }

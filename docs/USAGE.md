@@ -252,7 +252,9 @@ On the current test machine with 32 logical processors, stable 0.2.0 operation (
 
 ## Graceful Shutdown
 
-When the manager starts DSH, it appends a dynamic `--patch` that loads `windows-lifecycle.mjs`:
+When the manager starts DSH, it passes a dynamic `--patch` that loads `windows-lifecycle.mjs`. Since DSH 0.1.1, launcher-owned flags such as `--patch` must precede the `--profile` alias, and every manager launch passes `--no-open` so opening the frontend stays a manager responsibility (a wrapped npx launch would otherwise block on the default-browser handoff):
+
+`dsh --patch <per-launch patch> --profile web --no-open --host 127.0.0.1 --port <port>`
 
 The bridge is now a versioned runtime protocol, not a single-purpose shutdown channel. The manager keeps one authenticated IPC connection and can issue `ping`, `getStatus`, `getRuntimeInfo`, and `shutdown` while receiving `ready`, `stopping`, and `exiting` events. Status and runtime info report PID, actual listening port, DSH version, profile, and DSH home from inside the DSH process; the plugin does not fabricate values it cannot obtain.
 
