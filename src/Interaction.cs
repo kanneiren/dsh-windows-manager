@@ -40,6 +40,7 @@ namespace DeepSeekHarnessManager
         void Show(ManagerMessageKind kind, string message);
         bool Confirm(ManagerConfirmKind kind, string message, string title);
         ConflictChoice ResolvePortConflict(PortInspection inspection, int alternatePort);
+        ResidueRepairChoice ResolveResidueRepair(ResidueDiagnosis diagnosis, int alternatePort);
         bool ConfirmForceEnd(ProcessIdentity process);
         UpdateOutcome WaitForUpdate(string title, Task<UpdateOutcome> updateTask);
     }
@@ -66,6 +67,12 @@ namespace DeepSeekHarnessManager
             choice.Action = ConflictAction.Cancel;
             choice.Port = 0;
             return choice;
+        }
+
+        public ResidueRepairChoice ResolveResidueRepair(ResidueDiagnosis diagnosis, int alternatePort)
+        {
+            FileLog.Warn("Residue repair was declined in silent mode: " + (diagnosis == null ? String.Empty : diagnosis.Kind.ToString()));
+            return new ResidueRepairChoice { Action = ResidueRepairAction.Cancel, Port = 0 };
         }
 
         public bool ConfirmForceEnd(ProcessIdentity process)

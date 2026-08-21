@@ -33,6 +33,7 @@ Do not describe the manager package as the DSH runtime. They are separate packag
 - Bind managed DSH Web instances to `127.0.0.1` unless the product requirements explicitly change.
 - Never identify DSH from a port or `node.exe` alone. Preserve HTTP and process-command fingerprints for fallback, and revalidate bridge-reported PID/port against Windows process identity before using IPC state authoritatively.
 - Never terminate an unknown process automatically. Revalidate PID, start time, image path, session, services, and port ownership immediately before termination.
+- Port residue diagnosis runs only from an explicit tray click, never on a timer; its repairs are user-chosen, revalidated immediately before acting, and `wsl.exe --terminate <distro>` appears only there behind explicit confirmation with its consequence labeled.
 - Try the authenticated versioned Cordis runtime bridge before offering manual process termination.
 - Never install updates silently. Network checks may be automatic; changes require explicit user confirmation.
 - Keep post-update compatibility smoke testing and verified rollback intact for global npm, npx, and source runtimes.
@@ -62,6 +63,7 @@ Do not describe the manager package as the DSH runtime. They are separate packag
 - `src/RuntimeAdapter.cs`: `IRuntimeAdapter` / `IRuntimeProcess` boundary and registry; only `WindowsRuntimeAdapter` is implemented.
 - `src/IpcBridge.cs`: versioned named-pipe protocol client, runtime-info parsing, and persistent event connection.
 - `src/PortProcess.cs`: port ownership, process identity, protection, and safe termination.
+- `src/ResidueDiagnostics.cs`: on-demand port residue classifier, WSL in-distro listener probe, and repair choice model.
 - `src/GracefulShutdown.cs`: authenticated versioned Runtime Bridge shutdown client and per-launch patch generation.
 - `src/UpdateManager.cs`: cached checks and confirmed update execution.
 - `src/Configuration.cs`: config creation, normalization, and validation.

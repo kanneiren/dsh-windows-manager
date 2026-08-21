@@ -23,6 +23,8 @@ DSH Web UI 使用 `--host 127.0.0.1` 启动。生命周期桥接机制使用本�
 
 未知进程绝不会被自动终止。用户必须主动请求终止；只有在正常关闭尝试失败并经过第二次确认后，才会强制终止。
 
+托盘的「诊断端口残留」仅在用户点击时运行识别（无后台轮询，WSL 发行版内探活只在该流程中按需执行）。所有修复动作都必须由用户在诊断对话框中主动选择：重置管理器自身状态属于内部数据操作；结束残留 DSH 相关进程复用与端口冲突流程相同的即时复验与二次确认；重启 WSL 发行版会停止该发行版内的所有进程，按钮旁明确标注后果，执行前会重新探活确认，且绝不是默认动作。受保护进程永远不会出现在可终止选项中。
+
 外部启动的 DSH 进程若未进入 Web 就绪状态，不会因就绪等待超时而被自动终止。启动清理仅限当前管理器操作所启动的进程。
 
 ## Manager Control 协议
@@ -37,7 +39,7 @@ Manager 对 CLI 和第三方前端暴露一个独立的本地命名管道：
 
 ## WSL 适配安全边界
 
-未来的 WSL2 支持遵循以下边界：Manager 只运行在 Windows，不在 WSL 内安装 Manager/daemon；WSL 内只有 DSH 和生成的 Runtime Bridge `--patch`。WSL 默认关闭，检测只由用户显式触发（`wsl detect/enable/disable/status`）。只对用户配置的 distro 执行内部命令白名单；使用 `wsl.exe` 进程作为存活句柄，Linux PID 只接受 WSL 内 Runtime Bridge 上报值，不通过 WMI 猜测；Runtime Bridge transport 使用 loopback TCP 和与 Windows 命名管道相同的 256 位 token，不暴露到局域网；默认停止方式是桥内 `shutdown`，不会默认执行 `wsl.exe --terminate <distro>`。
+未来的 WSL2 支持遵循以下边界：Manager 只运行在 Windows，不在 WSL 内安装 Manager/daemon；WSL 内只有 DSH 和生成的 Runtime Bridge `--patch`。WSL 默认关闭，检测只由用户显式触发（`wsl detect/enable/disable/status`）。只对用户配置的 distro 执行内部命令白名单；使用 `wsl.exe` 进程作为存活句柄，Linux PID 只接受 WSL 内 Runtime Bridge 上报值，不通过 WMI 猜测；Runtime Bridge transport 使用 loopback TCP 和与 Windows 命名管道相同的 256 位 token，不暴露到局域网；默认停止方式是桥内 `shutdown`，不会把 `wsl.exe --terminate <distro>` 当作默认停止动作（唯一例外是显式确认的端口残留修复，该操作会明确提示发行版内所有进程都将停止）。
 
 ## 优雅关闭与 IPC
 

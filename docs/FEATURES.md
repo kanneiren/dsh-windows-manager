@@ -13,6 +13,7 @@
 | Runtime adapters | Global npm, fixed-version npx, and Git source checkout |
 | Discovery | Authoritative DSH IPC status/events when the bridge is connected; combined HTTP content and process-command fingerprints remain as fallback |
 | Ports | Configurable preferred port, bounded fallback selection, conflict details |
+| Residue diagnosis | On-demand tray diagnosis classifies stale manager state, leftover DSH processes, WSL forwarding residue, and external holders; confirmed repairs revalidate immediately before acting |
 | Frontends | `web` opens the local Web UI; `oh-dsh` and `custom` are reserved and fail explicitly instead of falling back to web |
 | Runtime adapter | `IRuntimeAdapter` boundary with Windows and WSL2 implementations; WSL uses bridge-first state, loopback TCP transport, attached-instance adoption/stop, and no Manager software inside WSL |
 | WSL optional | Disabled by default; `wsl detect/enable/disable/status` and `configure --runtime wsl --wsl-distro <name>` provide explicit detection and switching without polling. Auto-selection ignores Docker Desktop/Rancher/Podman helper distros and prefers the configured, default, running, or best-known general-purpose distro |

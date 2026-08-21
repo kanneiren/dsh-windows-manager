@@ -56,6 +56,8 @@ namespace DeepSeekHarnessManager.Tests
                 Run("npm dist-tag resolution", TestRegistryDistTagResolution);
                 Run("update rollback transaction", TestUpdateRollbackTransaction);
                 Run("confirmed update refresh", TestConfirmedUpdateRefresh);
+                Run("residue classification", TestResidueClassification);
+                Run("residue repair routing", TestResidueRepairRouting);
                 Run("existing DSH adoption", TestExistingHarnessAdoption);
                 if (Array.IndexOf(args, "--integration") >= 0)
                 {
@@ -1126,6 +1128,133 @@ namespace DeepSeekHarnessManager.Tests
             Assert(controller.UpdateInfo != null && controller.UpdateInfo.UpdateAvailable, "a failed refresh must keep the previously known update state");
         }
 
+        private static void TestResidueClassification()
+        {
+            Localization.Initialize("en-US");
+            PluginCatalog catalog = PluginCatalog.Load();
+            PluginDefinition plugin = catalog.Get("deepseek-harness-web");
+
+            int freePort = ReserveFreePort();
+            InstanceConfig clean = CreateInstance(plugin, freePort);
+            ResidueDiagnosis none = ResidueInspector.Diagnose(clean, plugin, null);
+            Assert(none.Kind == ResidueKind.None, "a free port with no persisted state must diagnose as None, got " + none.Kind);
+
+            PersistedInstanceState staleState = new PersistedInstanceState { Port = freePort, ProcessId = 99999999, StartedAtUtc = DateTime.UtcNow.ToString("o") };
+            ResidueDiagnosis stateDiagnosis = ResidueInspector.Diagnose(clean, plugin, staleState);
+            Assert(stateDiagnosis.Kind == ResidueKind.StaleManagerState, "a dead recorded PID with a free port must diagnose as StaleManagerState, got " + stateDiagnosis.Kind);
+
+            int externalPort = ReserveFreePort();
+            TcpListener listener = new TcpListener(IPAddress.Loopback, externalPort);
+            listener.Start();
+            Thread server = new Thread(delegate()
+            {
+                try
+                {
+                    using (TcpClient client = listener.AcceptTcpClient())
+                    using (NetworkStream stream = client.GetStream())
+                    {
+                        byte[] buffer = new byte[2048];
+                        stream.Read(buffer, 0, buffer.Length);
+                        string body = "<html><title>Not DSH</title></html>";
+                        string response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: " + Encoding.UTF8.GetByteCount(body) + "\r\nConnection: close\r\n\r\n" + body;
+                        byte[] bytes = Encoding.UTF8.GetBytes(response);
+                        stream.Write(bytes, 0, bytes.Length);
+                    }
+                }
+                catch { }
+            });
+            server.IsBackground = true;
+            server.Start();
+            try
+            {
+                InstanceConfig external = CreateInstance(plugin, externalPort);
+                ResidueDiagnosis externalDiagnosis = ResidueInspector.Diagnose(external, plugin, null);
+                Assert(externalDiagnosis.Kind == ResidueKind.ExternalProcess, "a non-DSH holder must diagnose as ExternalProcess, got " + externalDiagnosis.Kind);
+            }
+            finally
+            {
+                listener.Stop();
+                server.Join(2000);
+            }
+
+            string node = AppPaths.FindOnPath("node.exe");
+            Assert(!String.IsNullOrWhiteSpace(node), "node.exe is required for the residue classification test");
+            int orphanPort = ReserveFreePort();
+            string scriptDirectory = Path.Combine(AppPaths.DataDirectory, "residue-detect", "@deepseek-ai", "dsh", "lib");
+            Directory.CreateDirectory(scriptDirectory);
+            string scriptPath = Path.Combine(scriptDirectory, "helper.cjs");
+            File.WriteAllText(scriptPath, "const http=require('http');const port=Number(process.argv[2]);http.createServer((req,res)=>{res.writeHead(200,{'Content-Type':'text/html'});res.end('<html><title>Orphan</title></html>')}).listen(port,'127.0.0.1');", Encoding.UTF8);
+            ProcessStartInfo startInfo = new ProcessStartInfo();
+            startInfo.FileName = node;
+            startInfo.Arguments = "\"" + scriptPath + "\" " + orphanPort;
+            startInfo.UseShellExecute = false;
+            startInfo.CreateNoWindow = true;
+            using (Process process = Process.Start(startInfo))
+            {
+                try
+                {
+                    DateTime deadline = DateTime.UtcNow.AddSeconds(10);
+                    while (DateTime.UtcNow < deadline && PortMap.GetPreferredListenerProcessId(orphanPort) == 0) Thread.Sleep(100);
+                    InstanceConfig orphan = CreateInstance(plugin, orphanPort);
+                    ResidueDiagnosis orphanDiagnosis = ResidueInspector.Diagnose(orphan, plugin, null);
+                    Assert(orphanDiagnosis.Kind == ResidueKind.DshOrphanProcess, "a DSH-tree holder without a live web UI must diagnose as DshOrphanProcess, got " + orphanDiagnosis.Kind + " evidence=" + orphanDiagnosis.Evidence);
+                }
+                finally
+                {
+                    try { if (!process.HasExited) process.Kill(); } catch { }
+                    process.WaitForExit(5000);
+                }
+            }
+
+            Assert(ResidueInspector.DecideWslRelayKind(InDistroListenerProbe.NoListener) == ResidueKind.WslForwardingResidue, "no in-distro listener under a relay holder must be forwarding residue");
+            Assert(ResidueInspector.DecideWslRelayKind(InDistroListenerProbe.ListenerExists) == ResidueKind.ExternalProcess, "an in-distro listener must not be classified as forwarding residue");
+            Assert(ResidueInspector.DecideWslRelayKind(InDistroListenerProbe.Unavailable) == ResidueKind.WslForwardingResidue, "an unavailable probe keeps forwarding residue with a caveat");
+            ProcessIdentity relay = new ProcessIdentity { Name = "wslrelay.exe", ImagePath = @"C:\Windows\System32\wslrelay.exe" };
+            ProcessIdentity notRelay = new ProcessIdentity { Name = "node.exe", ImagePath = @"C:\Node.js\node.exe" };
+            Assert(ResidueInspector.IsWslForwardingProcess(relay) && !ResidueInspector.IsWslForwardingProcess(notRelay), "WSL forwarding process detection mismatch");
+        }
+
+        private static void TestResidueRepairRouting()
+        {
+            Localization.Initialize("en-US");
+            PluginCatalog catalog = PluginCatalog.Load();
+            PluginDefinition plugin = catalog.Get("deepseek-harness-web");
+            ConfigurationStore store = new ConfigurationStore(catalog);
+            int basePort = ReserveFreePort();
+            InstanceConfig first = CreateInstance(plugin, basePort);
+            first.Id = "residue-first";
+            InstanceConfig second = CreateInstance(plugin, basePort + 1);
+            second.Id = "residue-second";
+            ManagerConfig config = new ManagerConfig();
+            config.SchemaVersion = 1;
+            config.Language = "auto";
+            config.DefaultInstanceId = first.Id;
+            config.Instances = new List<InstanceConfig> { first, second };
+            store.Save(config);
+            RecordingInteraction interaction = new RecordingInteraction();
+            using (ManagerService service = new ManagerService(config, catalog, store, interaction))
+            {
+                int alternate = service.FindInstanceAlternatePort(first.Id);
+                Assert(alternate > basePort && alternate != basePort + 1, "the alternate port must skip other configured instances, got " + alternate);
+
+                ResidueDiagnosis noneDiagnosis = new ResidueDiagnosis { Kind = ResidueKind.None, Port = basePort };
+                service.ResolveResidueRepair(first.Id, noneDiagnosis);
+                Assert(interaction.InformationCount == 1, "a None diagnosis must only inform the user");
+
+                store.SaveState(first.Id, new PersistedInstanceState { Port = basePort, ProcessId = 12345678, Ownership = "managed" });
+                interaction.ResidueRepairResult = new ResidueRepairChoice { Action = ResidueRepairAction.ResetState };
+                ResidueDiagnosis staleDiagnosis = new ResidueDiagnosis { Kind = ResidueKind.StaleManagerState, Port = basePort };
+                service.ResolveResidueRepair(first.Id, staleDiagnosis);
+                Assert(store.ReadState(first.Id) == null, "ResetState must delete the persisted state");
+                Assert(interaction.InformationCount == 2, "ResetState must confirm to the user");
+
+                interaction.ResidueRepairResult = new ResidueRepairChoice { Action = ResidueRepairAction.Cancel };
+                store.SaveState(first.Id, new PersistedInstanceState { Port = basePort, ProcessId = 12345678, Ownership = "managed" });
+                service.ResolveResidueRepair(first.Id, staleDiagnosis);
+                Assert(store.ReadState(first.Id) != null, "a cancelled repair must leave the persisted state untouched");
+            }
+        }
+
         private static void TestWslRuntimeResolutionKinds()
         {
             PluginCatalog catalog = PluginCatalog.Load();
@@ -1458,6 +1587,8 @@ namespace DeepSeekHarnessManager.Tests
             public int ErrorCount;
             public int ConfirmCount;
             public string LastConfirmMessage;
+            public ResidueRepairChoice ResidueRepairResult;
+            public int ResidueRepairCount;
 
             public void Show(ManagerMessageKind kind, string message)
             {
@@ -1478,6 +1609,12 @@ namespace DeepSeekHarnessManager.Tests
                 ConflictChoice choice = new ConflictChoice();
                 choice.Action = ConflictAction.Cancel;
                 return choice;
+            }
+
+            public ResidueRepairChoice ResolveResidueRepair(ResidueDiagnosis diagnosis, int alternatePort)
+            {
+                ResidueRepairCount++;
+                return ResidueRepairResult ?? new ResidueRepairChoice { Action = ResidueRepairAction.Cancel, Port = 0 };
             }
 
             public bool ConfirmForceEnd(ProcessIdentity process)

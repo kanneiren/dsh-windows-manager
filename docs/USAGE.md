@@ -208,6 +208,7 @@ The source adapter validates `.git`, `package.json`, `pnpm-lock.yaml`, and `apps
 - `Start Harness`: start the instance without automatically opening a page.
 - `Stop Harness`: attempt a graceful shutdown through the Cordis bridge first.
 - `Restart Harness`: restart after a graceful shutdown.
+- `Diagnose port residue`: runs only when clicked. It classifies why the port is unavailable (stale manager state, a leftover DSH-related process, WSL port-forwarding residue, or an external process) and offers matching repairs in a diagnosis report: reset the manager state, end the leftover process and restart on the original port, restart the distro and restart on the original port (stops every process inside the distro), or switch to an alternate port. Termination and distro-restart actions require confirmation and are revalidated immediately before execution; the WSL in-distro probe runs only inside this flow with no background polling.
 - `Check for updates`: ignore the cache and check immediately.
 - `Install available update`: appears only when a newer version is found and requires another confirmation.
 - `Status details`: show the port, PID, path, fingerprint, workspace, and logs.

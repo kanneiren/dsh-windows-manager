@@ -592,6 +592,17 @@ namespace DeepSeekHarnessManager
             return 0;
         }
 
+        public void ResetPersistedState()
+        {
+            if (State == InstanceStateKind.Running || State == InstanceStateKind.Starting
+                || State == InstanceStateKind.Stopping || State == InstanceStateKind.Updating) return;
+            configurationStore.DeleteState(Config.Id);
+            persistedState = null;
+            bridgeLaunch = null;
+            savedPort = 0;
+            savedProcessId = 0;
+        }
+
         public void SetUpdating(bool updating, string text)
         {
             SetState(updating ? InstanceStateKind.Updating : InstanceStateKind.Stopped, text);

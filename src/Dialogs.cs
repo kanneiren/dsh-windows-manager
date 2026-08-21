@@ -120,6 +120,101 @@ namespace DeepSeekHarnessManager
         }
     }
 
+    internal sealed class ResidueRepairForm : Form
+    {
+        private readonly ResidueRepairChoice choice;
+
+        public ResidueRepairForm(ResidueDiagnosis diagnosis, int alternatePort)
+        {
+            choice = new ResidueRepairChoice();
+            choice.Action = ResidueRepairAction.Cancel;
+            choice.Port = 0;
+            Text = Localization.Text("Residue.Title");
+            StartPosition = FormStartPosition.CenterScreen;
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            ShowInTaskbar = true;
+            ClientSize = new Size(640, 384);
+            Font = SystemFonts.MessageBoxFont;
+
+            Label title = new Label();
+            title.Text = SummaryText(diagnosis);
+            title.Font = new Font(Font, FontStyle.Bold);
+            title.AutoSize = true;
+            title.Location = new Point(18, 18);
+            Controls.Add(title);
+
+            TextBox details = new TextBox();
+            details.Location = new Point(18, 50);
+            details.Size = new Size(604, 246);
+            details.Multiline = true;
+            details.ReadOnly = true;
+            details.ScrollBars = ScrollBars.Vertical;
+            details.BackColor = SystemColors.Window;
+            details.Text = diagnosis.Evidence ?? String.Empty;
+            Controls.Add(details);
+
+            int y = 306;
+            if (diagnosis.Kind == ResidueKind.WslForwardingResidue)
+            {
+                Label warning = new Label();
+                warning.Text = Localization.Text("Residue.RestartDistroWarning");
+                warning.ForeColor = Color.Firebrick;
+                warning.AutoSize = true;
+                warning.Location = new Point(18, 306);
+                Controls.Add(warning);
+                y = 330;
+            }
+
+            int x = 18;
+            if (diagnosis.Kind == ResidueKind.StaleManagerState)
+                x = AddAction(x, y, 180, Localization.Text("Residue.ResetState"), ResidueRepairAction.ResetState, 0);
+            if (diagnosis.Kind == ResidueKind.DshOrphanProcess)
+                x = AddAction(x, y, 250, Localization.Text("Residue.ClearOrphan"), ResidueRepairAction.ClearOrphanAndRestart, 0);
+            if (diagnosis.Kind == ResidueKind.WslForwardingResidue)
+                x = AddAction(x, y, 260, Localization.Text("Residue.RestartDistro"), ResidueRepairAction.RestartDistroAndRestart, 0);
+            if (diagnosis.Kind == ResidueKind.DshOrphanProcess || diagnosis.Kind == ResidueKind.WslForwardingResidue || diagnosis.Kind == ResidueKind.ExternalProcess)
+                x = AddAction(x, y, 160, Localization.Format("Residue.UseAlternate", alternatePort), ResidueRepairAction.UseAlternatePort, alternatePort);
+
+            Button cancel = new Button();
+            cancel.Text = Localization.Text("Dialog.Cancel");
+            cancel.Size = new Size(100, 32);
+            cancel.Location = new Point(640 - 100 - 18, y);
+            cancel.DialogResult = DialogResult.Cancel;
+            Controls.Add(cancel);
+            CancelButton = cancel;
+        }
+
+        public ResidueRepairChoice Choice { get { return choice; } }
+
+        private int AddAction(int x, int y, int width, string text, ResidueRepairAction action, int port)
+        {
+            Button button = new Button();
+            button.Text = text;
+            button.Size = new Size(width, 32);
+            button.Location = new Point(x, y);
+            button.Click += delegate
+            {
+                choice.Action = action;
+                choice.Port = port;
+                DialogResult = DialogResult.OK;
+                Close();
+            };
+            Controls.Add(button);
+            return x + width + 10;
+        }
+
+        private static string SummaryText(ResidueDiagnosis diagnosis)
+        {
+            if (diagnosis == null) return Localization.Text("Residue.Title");
+            if (diagnosis.Kind == ResidueKind.StaleManagerState) return Localization.Text("Residue.SummaryStaleState");
+            if (diagnosis.Kind == ResidueKind.DshOrphanProcess) return Localization.Format("Residue.SummaryOrphan", diagnosis.Port);
+            if (diagnosis.Kind == ResidueKind.WslForwardingResidue) return Localization.Format("Residue.SummaryWslRelay", diagnosis.Port);
+            return Localization.Format("Residue.SummaryExternal", diagnosis.Port);
+        }
+    }
+
     internal sealed class UpdateProgressForm : Form
     {
         private readonly Task<UpdateOutcome> task;
@@ -211,6 +306,16 @@ namespace DeepSeekHarnessManager
         public ConflictChoice ResolvePortConflict(PortInspection inspection, int alternatePort)
         {
             return ManagerDialogs.ShowPortConflict(null, inspection, alternatePort);
+        }
+
+        public ResidueRepairChoice ResolveResidueRepair(ResidueDiagnosis diagnosis, int alternatePort)
+        {
+            if (diagnosis == null) return new ResidueRepairChoice { Action = ResidueRepairAction.Cancel, Port = 0 };
+            using (ResidueRepairForm form = new ResidueRepairForm(diagnosis, alternatePort))
+            {
+                form.ShowDialog(null);
+                return form.Choice;
+            }
         }
 
         public bool ConfirmForceEnd(ProcessIdentity process)

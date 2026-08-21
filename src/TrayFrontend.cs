@@ -239,15 +239,18 @@ namespace DeepSeekHarnessManager
             binding.Start = new ToolStripMenuItem(Localization.Text("Menu.Start"));
             binding.Stop = new ToolStripMenuItem(Localization.Text("Menu.Stop"));
             binding.Restart = new ToolStripMenuItem(Localization.Text("Menu.Restart"));
+            binding.DiagnoseResidue = new ToolStripMenuItem(Localization.Text("Menu.DiagnoseResidue"));
             binding.Open.Click += delegate { manager.Open(instanceId); };
             binding.Start.Click += delegate { manager.Start(instanceId); };
             binding.Stop.Click += delegate { manager.Stop(instanceId, true); };
             binding.Restart.Click += delegate { manager.Restart(instanceId); };
+            binding.DiagnoseResidue.Click += delegate { DiagnoseResidueAsync(instanceId); };
 
             items.Add(binding.Open);
             items.Add(binding.Start);
             items.Add(binding.Stop);
             items.Add(binding.Restart);
+            items.Add(binding.DiagnoseResidue);
 
             ToolStripMenuItem more = new ToolStripMenuItem(Localization.Text("Menu.More"));
             binding.Version = new ToolStripMenuItem(Localization.Text("Menu.Version") + ": " + Localization.Text("Menu.Checking"));
@@ -390,6 +393,33 @@ namespace DeepSeekHarnessManager
             finally
             {
                 RefreshUi();
+            }
+        }
+
+        private async void DiagnoseResidueAsync(string instanceId)
+        {
+            InstanceMenuBinding binding;
+            if (!menuBindings.TryGetValue(instanceId, out binding) || binding.DiagnoseResidue == null) return;
+            binding.DiagnoseResidue.Enabled = false;
+            binding.DiagnoseResidue.Text = Localization.Text("Menu.Diagnosing");
+            try
+            {
+                ResidueDiagnosis diagnosis = await manager.DiagnoseResidueAsync(instanceId);
+                manager.ResolveResidueRepair(instanceId, diagnosis);
+            }
+            catch (Exception exception)
+            {
+                MessageBox.Show(Localization.Format("Residue.DiagnoseFailed", exception.Message),
+                    Localization.Text("App.Title"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            finally
+            {
+                InstanceMenuBinding current;
+                if (menuBindings.TryGetValue(instanceId, out current) && current.DiagnoseResidue != null)
+                {
+                    current.DiagnoseResidue.Text = Localization.Text("Menu.DiagnoseResidue");
+                    current.DiagnoseResidue.Enabled = true;
+                }
             }
         }
 
@@ -626,6 +656,7 @@ namespace DeepSeekHarnessManager
             public ToolStripMenuItem Start;
             public ToolStripMenuItem Stop;
             public ToolStripMenuItem Restart;
+            public ToolStripMenuItem DiagnoseResidue;
             public ToolStripMenuItem CheckUpdate;
             public ToolStripMenuItem UpdateNow;
             public ToolStripMenuItem Details;

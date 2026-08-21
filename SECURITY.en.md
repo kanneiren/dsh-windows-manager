@@ -23,6 +23,8 @@ Before ending any process, the manager reacquires the port owner and verifies PI
 
 Unknown processes are never terminated automatically. The user must request termination, and forced termination requires a second confirmation after a normal close attempt fails.
 
+The tray `Diagnose port residue` action runs only after an explicit click (no background polling; WSL in-distro probes execute only in that flow). Every repair requires the user to choose it in the diagnosis dialog: resetting the manager's own state is internal data only; ending a leftover DSH-related process reuses the same immediate revalidation and second confirmation as the port-conflict flow; restarting a WSL distro — which stops every process inside it — is labeled with its consequence, re-probes the distro immediately before running, and is never a default action. Protected processes are never offered for termination.
+
 An externally started DSH process that does not become Web-ready is not automatically terminated on a readiness timeout. Startup cleanup is limited to a process launched by the current manager operation.
 
 ## Manager Control Protocol
@@ -37,7 +39,7 @@ Only the current Windows user can read and write it. It listens on no TCP endpoi
 
 ## WSL Adaptation Security Boundary
 
-Future WSL2 support follows these boundaries: the Manager runs only on Windows and installs no Manager/daemon inside WSL; the only WSL-side components are DSH and its generated Runtime Bridge `--patch`. WSL is disabled by default and detection runs only when the user explicitly invokes `wsl detect/enable/disable/status`. Run only an internal command allowlist inside the user-selected distro; use the `wsl.exe` process as the liveness handle and accept Linux PIDs only from the in-WSL Runtime Bridge, never from WMI guessing; use loopback TCP with the same 256-bit token as the Windows named pipe and never expose the bridge to the LAN; stop through bridge `shutdown` by default, never `wsl.exe --terminate <distro>`.
+Future WSL2 support follows these boundaries: the Manager runs only on Windows and installs no Manager/daemon inside WSL; the only WSL-side components are DSH and its generated Runtime Bridge `--patch`. WSL is disabled by default and detection runs only when the user explicitly invokes `wsl detect/enable/disable/status`. Run only an internal command allowlist inside the user-selected distro; use the `wsl.exe` process as the liveness handle and accept Linux PIDs only from the in-WSL Runtime Bridge, never from WMI guessing; use loopback TCP with the same 256-bit token as the Windows named pipe and never expose the bridge to the LAN; stop through bridge `shutdown` by default, never `wsl.exe --terminate <distro>` as a default stop (the only exception is the explicitly confirmed port-residue repair, which states that every process inside the distro will stop).
 
 ## Graceful Shutdown and IPC
 

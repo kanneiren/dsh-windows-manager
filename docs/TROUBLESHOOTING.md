@@ -60,6 +60,8 @@ Get-CimInstance Win32_Process -Filter "ProcessId=<PID>" | Format-List ProcessId,
 
 Do not terminate the owner based only on its name. The manager's conflict dialog performs additional PID, start-time, path, session, system-directory, service-host, and port-owner checks.
 
+When a DSH process ended but the port still looks occupied, run the tray `Diagnose port residue` action on the instance. It runs only on demand and classifies the holder as stale manager state, a leftover DSH-related process, WSL port-forwarding residue (`wslrelay.exe`/`wslhost.exe` with nothing listening inside the distro, confirmed through `wsl.exe`), or an external process, then offers confirmed repairs with immediate revalidation.
+
 ## 5. Read the Logs
 
 Use `Open logs` from the tray menu. Manager-launched Windows instances create timestamped `.out.log` and `.err.log` files under:

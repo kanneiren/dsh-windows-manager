@@ -208,6 +208,7 @@ powershell.exe -ExecutionPolicy Bypass -File .\scripts\Install.ps1 `
 - `Start Harness`：启动实例，不自动打开页面。
 - `Stop Harness`：优先通过 Cordis 桥优雅关闭。
 - `Restart Harness`：优雅关闭后重新启动。
+- `诊断端口残留`：仅点击时运行。识别端口占用原因（管理器状态过期、残留 DSH 进程、WSL 端口转发残留、外部进程），在诊断报告中按类型提供修复动作：重置管理器状态、结束残留进程并按原端口重启、重启发行版并按原端口重启（会停止发行版内所有进程）、或改用备用端口。所有涉及终止/重启发行版的动作都需要确认并在执行前即时复验；WSL 发行版内探活只在该流程中执行，无后台轮询。
 - `Check for updates`：忽略缓存并立即检查。
 - `Install available update`：仅发现新版时出现，必须再次确认。
 - `Status details`：显示端口、PID、路径、指纹、工作区和日志。

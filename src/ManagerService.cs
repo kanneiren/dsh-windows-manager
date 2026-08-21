@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace DeepSeekHarnessManager
@@ -80,6 +81,8 @@ namespace DeepSeekHarnessManager
         void Restart(string instanceId);
         Task<UpdateCheckResult> CheckForUpdatesAsync(string instanceId, bool force);
         bool InstallUpdate(string instanceId);
+        Task<ResidueDiagnosis> DiagnoseResidueAsync(string instanceId);
+        void ResolveResidueRepair(string instanceId, ResidueDiagnosis diagnosis);
         void SetLanguage(string language);
         string GetInstanceDetails(string instanceId);
         string GetDiagnosticsText();
@@ -365,6 +368,134 @@ namespace DeepSeekHarnessManager
             bool succeeded = updateManager.ExecuteConfirmedUpdate(GetController(instanceId));
             RaiseChanged();
             return succeeded;
+        }
+
+        public Task<ResidueDiagnosis> DiagnoseResidueAsync(string instanceId)
+        {
+            InstanceController controller = GetController(instanceId);
+            string id = controller.Config.Id;
+            PluginDefinition plugin = controller.Plugin;
+            InstanceConfig instanceConfig = controller.Config;
+            return Task.Run(delegate
+            {
+                return ResidueInspector.Diagnose(instanceConfig, plugin, configurationStore.ReadState(id));
+            });
+        }
+
+        public void ResolveResidueRepair(string instanceId, ResidueDiagnosis diagnosis)
+        {
+            InstanceController controller = GetController(instanceId);
+            if (diagnosis == null) return;
+            if (diagnosis.Kind == ResidueKind.None)
+            {
+                interaction.Show(ManagerMessageKind.Information, Localization.Format("Residue.None", diagnosis.Evidence ?? String.Empty));
+                return;
+            }
+            int alternatePort = FindInstanceAlternatePort(instanceId);
+            ResidueRepairChoice choice = interaction.ResolveResidueRepair(diagnosis, alternatePort);
+            if (choice == null || choice.Action == ResidueRepairAction.Cancel) return;
+            try
+            {
+                ApplyResidueRepair(controller, diagnosis, choice);
+            }
+            catch (Exception exception)
+            {
+                FileLog.Error(exception);
+                interaction.Show(ManagerMessageKind.Error, exception.Message);
+            }
+            RaiseChanged();
+        }
+
+        internal int FindInstanceAlternatePort(string instanceId)
+        {
+            InstanceController controller = GetController(instanceId);
+            int count = controller.Plugin.FallbackPortCount <= 0 ? 20 : controller.Plugin.FallbackPortCount;
+            int end = Math.Min(65535, controller.Config.PreferredPort + count);
+            for (int port = controller.Config.PreferredPort + 1; port <= end; port++)
+            {
+                bool configured = false;
+                foreach (InstanceConfig instance in config.Instances)
+                    if (!ReferenceEquals(instance, controller.Config) && instance.PreferredPort == port) configured = true;
+                if (configured) continue;
+                if (PortMap.GetListenerProcessIds(port).Count == 0) return port;
+            }
+            return 0;
+        }
+
+        private void ApplyResidueRepair(InstanceController controller, ResidueDiagnosis diagnosis, ResidueRepairChoice choice)
+        {
+            if (choice.Action == ResidueRepairAction.ResetState)
+            {
+                controller.ResetPersistedState();
+                interaction.Show(ManagerMessageKind.Information, Localization.Text("Residue.ResetDone"));
+                return;
+            }
+
+            if (choice.Action == ResidueRepairAction.ClearOrphanAndRestart)
+            {
+                ProcessIdentity holder = diagnosis.Holder;
+                int currentOwner = PortMap.GetPreferredListenerProcessId(diagnosis.Port);
+                ProcessIdentity current = currentOwner > 0 ? ProcessInspector.Get(currentOwner, false) : null;
+                if (holder == null || current == null || currentOwner != holder.ProcessId || !ProcessInspector.IsSame(holder, current))
+                {
+                    interaction.Show(ManagerMessageKind.Warning, Localization.Text("Residue.PortChanged"));
+                    return;
+                }
+                string error;
+                if (!SafeTermination.TryCloseThenKill(current, diagnosis.Port, interaction, out error))
+                {
+                    if (!String.IsNullOrWhiteSpace(error)) interaction.Show(ManagerMessageKind.Warning, error);
+                    return;
+                }
+                controller.ResetPersistedState();
+                controller.Start(controller.Config.PreferredPort, true);
+                return;
+            }
+
+            if (choice.Action == ResidueRepairAction.RestartDistroAndRestart)
+            {
+                if (ResidueInspector.ProbeDistroListener(controller.Config.WslDistro, diagnosis.Port) == InDistroListenerProbe.ListenerExists)
+                {
+                    interaction.Show(ManagerMessageKind.Warning, Localization.Text("Residue.DistroListenerAppeared"));
+                    return;
+                }
+                CommandResult terminate = CommandRunner.RunCapture("wsl.exe",
+                    new string[] { "--terminate", controller.Config.WslDistro }, String.Empty, 15000);
+                if (terminate == null || terminate.TimedOut || terminate.ExitCode != 0)
+                {
+                    interaction.Show(ManagerMessageKind.Warning, Localization.Format("Residue.DistroRestartFailed",
+                        UpdateManagerDescribe(terminate)));
+                    return;
+                }
+                DateTime deadline = DateTime.UtcNow.AddSeconds(10);
+                while (DateTime.UtcNow < deadline && PortMap.GetListenerProcessIds(diagnosis.Port).Count > 0) Thread.Sleep(500);
+                if (PortMap.GetListenerProcessIds(diagnosis.Port).Count > 0)
+                {
+                    interaction.Show(ManagerMessageKind.Warning, Localization.Format("Residue.DistroRestartPortHeld", diagnosis.Port));
+                    return;
+                }
+                controller.ResetPersistedState();
+                controller.Start(controller.Config.PreferredPort, true);
+                return;
+            }
+
+            if (choice.Action == ResidueRepairAction.UseAlternatePort)
+            {
+                if (choice.Port <= 0)
+                {
+                    interaction.Show(ManagerMessageKind.Warning, Localization.Text("Residue.NoAlternatePort"));
+                    return;
+                }
+                controller.Start(choice.Port, true);
+            }
+        }
+
+        private static string UpdateManagerDescribe(CommandResult result)
+        {
+            if (result == null) return "wsl.exe did not return a result.";
+            string detail = ((result.StandardError ?? String.Empty) + " " + (result.StandardOutput ?? String.Empty)).Trim();
+            if (result.TimedOut) return "wsl.exe --terminate timed out." + (detail.Length == 0 ? String.Empty : " " + detail);
+            return detail.Length == 0 ? "wsl.exe --terminate failed with exit code " + result.ExitCode + "." : detail;
         }
 
         public void SetLanguage(string language)
